@@ -12,7 +12,7 @@ export type TDB = typeof db;
 let seq = 0;
 export async function novoUsuario(empresaId: string, nome: string, papeis: string[], prof?: { vinculo: "autonomo" | "proprio"; veiculoId?: string | null }) {
   seq++;
-  const [u] = await db.insert(schema.usuario).values({ empresaId, nome, email: `${nome.toLowerCase().replace(/\W/g, "")}${seq}@teste.local` }).returning();
+  const [u] = await db.insert(schema.usuario).values({ empresaId, nome, email: `${nome.toLowerCase().replace(/\W/g, "")}${seq}-${Math.random().toString(36).slice(2, 8)}@teste.local` }).returning();
   for (const codigo of papeis) {
     const [p] = await db.select().from(schema.papel).where(and(eq(schema.papel.empresaId, empresaId), eq(schema.papel.codigo, codigo)));
     await db.insert(schema.usuarioPapel).values({ usuarioId: u.id, papelId: p.id });
