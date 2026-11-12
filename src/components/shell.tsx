@@ -35,7 +35,7 @@ function Lista({ itens, path, onNav }: { itens: ItemNav[]; path: string; onNav?:
   );
 }
 
-export function Shell({ itens, tecnico, usuario, papel, naoLidas, marca, sair, children }: { itens: ItemNav[]; tecnico: boolean; usuario: string; papel: string; naoLidas: number; marca: ReactNode; sair: (fd: FormData) => void; children: ReactNode }) {
+export function Shell({ itens, tecnico, usuario, papel, naoLidas, marca, sair, demo = false, children }: { itens: ItemNav[]; tecnico: boolean; usuario: string; papel: string; naoLidas: number; marca: ReactNode; sair: (fd: FormData) => void; demo?: boolean; children: ReactNode }) {
   const path = usePathname();
   const [aberto, setAberto] = useState(false);
   const inferior = tecnico ? itens.slice(0, 4) : [];
@@ -61,10 +61,13 @@ export function Shell({ itens, tecnico, usuario, papel, naoLidas, marca, sair, c
             <Link href="/">{marca}</Link>
           </div>
           <div className="hidden text-[13px] text-muted lg:block">Olá, <span className="font-semibold text-navy">{usuario.split(" ")[0]}</span></div>
+          <div className="flex items-center gap-2">
+          {demo && <form action={sair}><button type="submit" className="btn btn-ice btn-sm" title="Voltar à escolha de usuário (demonstração)"><Users size={15} aria-hidden /><span className="hidden sm:inline">Trocar usuário</span><span className="sm:hidden">Trocar</span></button></form>}
           <Link href="/notificacoes" className="relative inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-text-2 hover:bg-ice-faint" aria-label={`Notificações: ${naoLidas} não lidas`}>
             <Bell size={18} aria-hidden /><span className="hidden sm:inline">Notificações</span>
             {naoLidas > 0 && <span className="num rounded-full bg-bad px-1.5 text-[11px] font-bold text-white">{naoLidas > 99 ? "99+" : naoLidas}</span>}
           </Link>
+          </div>
         </header>
         <main className={`mx-auto w-full max-w-[1400px] px-4 py-5 lg:px-8 lg:py-7 ${tecnico ? "pb-28 lg:pb-7" : ""}`}>{children}</main>
       </div>

@@ -75,3 +75,27 @@ export async function redefinirComToken(dbx: DBOrTx, token: string, nova: string
   await revogarTodasSessoes(dbx, r.usuarioId);
   await auditar(dbx, { usuarioId: r.usuarioId, empresaId: u.empresaId }, { acao: "senha.redefinida", entidadeTipo: "usuario", entidadeId: r.usuarioId });
 }
+
+/** Entrada rápida em conta de DEMONSTRAÇÃO (somente fora de produção e somente usuários demo). */
+export async function autenticarDemo(dbx: DBOrTx, usuarioId: string, userAgent?: string | null) {
+  if (process.env.APP_ENV === "production") throw new ErroNegocio("Acesso de demonstração indisponível em produção.");
+  const [u] = await dbx.select().from(usuario).where(eq(usuario.id, usuarioId));
+  if (!u || !u.demo || !u.ativo) throw new ErroNegocio("Conta de demonstração não encontrada.");
+  const token = gerarToken();
+  const expira = new Date(Date.now() + SESSAO_DIAS * 86400000);
+  await dbx.insert(sessao).values({ usuarioId: u.id, tokenHash: hashToken(token), expiraEm: expira, userAgent: userAgent?.slice(0, 300) ?? null });
+  await dbx.update(usuario).set({ ultimoLoginEm: new Date() }).where(eq(usuario.id, u.id));
+  await auditar(dbx, { usuarioId: u.id, empresaId: u.empresaId }, { acao: "login.demo", entidadeTipo: "usuario", entidadeId: u.id });
+  return { token, expira };
+}
+
+/** Lista contas demo para a tela inicial (vazia em produção). */
+export async function contasDemo(dbx: DBOrTx) {
+  if (process.env.APP_ENV === "production") return [];
+  const r = await dbx.execute<{ id: string; nome: string; email: string; papeis: string; vinculo: string | null }>(sql`
+    select u.id, u.nome, u.email, coalesce(string_agg(p.codigo, ',' order by p.codigo), '') as papeis,
+      (select pr.vinculo from profissional pr where pr.usuario_id = u.id) as vinculo
+    from usuario u left join usuario_papel up on up.usuario_id = u.id left join papel p on p.id = up.papel_id
+    where u.demo and u.ativo group by u.id order by u.nome`);
+  return r.rows;
+}

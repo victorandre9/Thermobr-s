@@ -2,7 +2,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/server/db";
-import { autenticar, redefinirComToken, revogarSessao } from "@/server/services/autenticacao";
+import { autenticar, autenticarDemo, redefinirComToken, revogarSessao } from "@/server/services/autenticacao";
 import { definirCookieSessao, limparCookieSessao, tokenAtual } from "@/server/auth/sessao";
 import { ErroNegocio } from "@/server/erros";
 import type { EstadoAcao } from "@/components/action-form";
@@ -36,4 +36,11 @@ export async function redefinir(_: EstadoAcao, fd: FormData): Promise<EstadoAcao
   try { await redefinirComToken(db, token, s1); }
   catch (e) { return { ok: false, erro: e instanceof ErroNegocio ? e.message : "Não foi possível redefinir." }; }
   return { ok: true, msg: "Senha redefinida. Faça login.", redirecionar: "/login" };
+}
+
+export async function entrarDemo(fd: FormData) {
+  const id = String(fd.get("usuarioId") ?? "");
+  const r = await autenticarDemo(db, id, (await headers()).get("user-agent"));
+  await definirCookieSessao(r.token, r.expira);
+  redirect("/");
 }
