@@ -33,7 +33,7 @@ function exigirVeiculoVisivel(ctx: Ctx, veiculoId: string) {
   throw new ErroAcesso();
 }
 
-export async function salvarVeiculo(tx: DBOrTx, ctx: Ctx, id: string | null, d: { identificacao: string; placa?: string | null; modelo?: string | null; ano?: number | null; responsavelProfissionalId?: string | null; parametrosManutencao: Record<string, { km?: number | null; dias?: number | null }>; ativo?: boolean }) {
+export async function salvarVeiculo(tx: DBOrTx, ctx: Ctx, id: string | null, d: { identificacao: string; placa?: string | null; modelo?: string | null; ano?: number | null; responsavelProfissionalId?: string | null; parametrosManutencao: Record<string, { km?: number | null; dias?: number | null }>; ativo?: boolean; versao?: number }) {
   exigir(ctx, "veiculo.gerenciar");
   if (!d.identificacao.trim()) throw new ErroNegocio("Identificação obrigatória.");
   if (d.responsavelProfissionalId) {
@@ -43,11 +43,14 @@ export async function salvarVeiculo(tx: DBOrTx, ctx: Ctx, id: string | null, d: 
   if (id) {
     const [antes] = await tx.select().from(veiculo).where(and(eq(veiculo.id, id), eq(veiculo.empresaId, ctx.empresaId)));
     if (!antes) throw new ErroAcesso();
-    const [r] = await tx.update(veiculo).set(d).where(eq(veiculo.id, id)).returning();
+    const { versao, ...dados } = d;
+    const [r] = await tx.update(veiculo).set({ ...dados, versao: antes.versao + 1 }).where(and(eq(veiculo.id, id), eq(veiculo.versao, versao ?? antes.versao))).returning();
+    if (!r) throw new ErroNegocio("Este registro foi alterado por outro usuário depois que você abriu a tela. Recarregue para ver a versão atual e refaça a alteração.");
     await auditar(tx, ctx, { acao: "veiculo.atualizado", entidadeTipo: "veiculo", entidadeId: id, antes, depois: r });
     return r;
   }
-  const [r] = await tx.insert(veiculo).values({ ...d, empresaId: ctx.empresaId }).returning();
+  const { versao: _v, ...novo } = d; void _v;
+  const [r] = await tx.insert(veiculo).values({ ...novo, empresaId: ctx.empresaId }).returning();
   await auditar(tx, ctx, { acao: "veiculo.criado", entidadeTipo: "veiculo", entidadeId: r.id, depois: r });
   return r;
 }
@@ -90,10 +93,31 @@ export async function modeloChecklist(dbx: DBOrTx, ctx: Ctx, tipo: "veiculo_said
   return { modelo: m, itens };
 }
 
-export async function checklistValido(dbx: DBOrTx, veiculoId: string, tipo: string) {
+/**
+ * Checklist válido para reutilização: mesmo veículo, mesmo tipo, dentro da validade E mesmo responsável.
+ * Troca de responsável (ou de veículo) exige nova conferência.
+ */
+export async function checklistValido(dbx: DBOrTx, veiculoId: string, tipo: string, responsavel?: { profissionalId?: string | null; usuarioId?: string | null }) {
+  const conds = [eq(checklistResposta.veiculoId, veiculoId), eq(checklistResposta.tipo, tipo), sql`${qc(checklistResposta.validoAte)} > now()`];
+  if (responsavel?.profissionalId) conds.push(eq(checklistResposta.profissionalId, responsavel.profissionalId));
+  else if (responsavel?.usuarioId) conds.push(eq(checklistResposta.usuarioId, responsavel.usuarioId));
   const [r] = await dbx.select({ r: checklistResposta, nome: usuario.nome }).from(checklistResposta).innerJoin(usuario, eq(usuario.id, checklistResposta.usuarioId))
-    .where(and(eq(checklistResposta.veiculoId, veiculoId), eq(checklistResposta.tipo, tipo), sql`${qc(checklistResposta.validoAte)} > now()`)).orderBy(desc(checklistResposta.realizadoEm)).limit(1);
+    .where(and(...conds)).orderBy(desc(checklistResposta.realizadoEm)).limit(1);
   return r ?? null;
+}
+
+/** Nova versão do modelo de checklist: a versão anterior é desativada e preservada (respostas antigas não mudam). */
+export async function salvarModeloChecklist(tx: DBOrTx, ctx: Ctx, tipo: "veiculo_saida" | "veiculo_retorno" | "ferramentas_saida" | "ferramentas_retorno", d: { nome: string; validadeHoras: number; itens: Array<{ descricao: string; criticidade: string; exigeFotoIrregular: boolean }> }) {
+  exigir(ctx, "checklist.gerenciar");
+  if (!d.nome.trim()) throw new ErroNegocio("Nome obrigatório.");
+  if (d.validadeHoras < 1 || d.validadeHoras > 72) throw new ErroNegocio("Validade entre 1 e 72 horas.");
+  if (tipo.startsWith("veiculo") && !d.itens.length) throw new ErroNegocio("Inclua ao menos um item.");
+  const [atual] = await tx.select().from(checklistModelo).where(and(eq(checklistModelo.empresaId, ctx.empresaId), eq(checklistModelo.tipo, tipo), eq(checklistModelo.ativo, true))).for("update");
+  if (atual) await tx.update(checklistModelo).set({ ativo: false }).where(eq(checklistModelo.id, atual.id));
+  const [m] = await tx.insert(checklistModelo).values({ empresaId: ctx.empresaId, tipo, nome: d.nome.trim(), validadeHoras: d.validadeHoras, versao: (atual?.versao ?? 0) + 1 }).returning();
+  if (d.itens.length) await tx.insert(checklistModeloItem).values(d.itens.map((i, ordem) => ({ modeloId: m.id, ordem, descricao: i.descricao.trim(), criticidade: i.criticidade, exigeFotoIrregular: i.exigeFotoIrregular })));
+  await auditar(tx, ctx, { acao: "checklist.modelo_versionado", entidadeTipo: "checklist_modelo", entidadeId: m.id, antes: atual ? { versao: atual.versao } : null, depois: { versao: m.versao, itens: d.itens.length } });
+  return m;
 }
 
 export interface RespostaChecklistVeiculo { itemId: string; resultado: "conforme" | "irregular" | "nao_aplica"; observacao?: string | null; fotos?: number }
@@ -103,7 +127,7 @@ export async function responderChecklistVeiculo(tx: DBOrTx, ctx: Ctx, veiculoId:
   if (!podeChecklistVeiculo(ctx, veiculoId)) throw new ErroAcesso(ctx.profissional?.vinculo === "autonomo" ? "Técnico autônomo não possui checklist de veículo." : "Você não está designado a este veículo.");
   const [v] = await tx.select().from(veiculo).where(and(eq(veiculo.id, veiculoId), eq(veiculo.empresaId, ctx.empresaId)));
   if (!v) throw new ErroAcesso();
-  if (!forcarNovo) { const val = await checklistValido(tx, veiculoId, tipo); if (val) return { resposta: val.r, reutilizado: true, pendencias: [] as string[] }; }
+  if (!forcarNovo) { const val = await checklistValido(tx, veiculoId, tipo, { profissionalId: ctx.profissional?.id ?? null, usuarioId: ctx.usuarioId }); if (val) return { resposta: val.r, reutilizado: true, pendencias: [] as string[] }; }
   if (chave) { const [ex] = await tx.select().from(checklistResposta).where(eq(checklistResposta.chaveIdempotencia, chave)); if (ex) return { resposta: ex, reutilizado: true, pendencias: [] }; }
   const { modelo, itens } = await modeloChecklist(tx, ctx, tipo);
   const falt = itens.filter((i) => !respostas.some((r) => r.itemId === i.id));
@@ -117,7 +141,7 @@ export async function responderChecklistVeiculo(tx: DBOrTx, ctx: Ctx, veiculoId:
     }
   }
   if (km !== null) await registrarOdometro(tx, ctx, veiculoId, km, "checklist");
-  const [resp] = await tx.insert(checklistResposta).values({ empresaId: ctx.empresaId, modeloId: modelo.id, tipo, veiculoId, profissionalId: ctx.profissional?.id ?? null, usuarioId: ctx.usuarioId, km, validoAte: sql`now() + make_interval(hours => ${modelo.validadeHoras})` as unknown as Date, observacoes: observacoes ?? null, chaveIdempotencia: chave ?? null }).returning();
+  const [resp] = await tx.insert(checklistResposta).values({ empresaId: ctx.empresaId, modeloId: modelo.id, tipo, veiculoId, profissionalId: ctx.profissional?.id ?? null, usuarioId: ctx.usuarioId, km, modeloVersao: modelo.versao, validoAte: sql`now() + make_interval(hours => ${modelo.validadeHoras})` as unknown as Date, observacoes: observacoes ?? null, chaveIdempotencia: chave ?? null }).returning();
   const pendencias: string[] = [];
   const itensIds: Record<string, string> = {};
   for (const r of respostas) {
@@ -127,7 +151,7 @@ export async function responderChecklistVeiculo(tx: DBOrTx, ctx: Ctx, veiculoId:
       const p = await garantirPendencia(tx, ctx, { tipo: "veiculo_irregularidade", titulo: `${v.identificacao}: ${it.descricao}`, descricao: r.observacao, veiculoId, prioridade: CRIT_PRIORIDADE[it.criticidade] ?? "media", entidadeTipo: "veiculo", entidadeId: veiculoId, prazo: somarDias(hojeSP(), it.criticidade === "critica" ? 0 : it.criticidade === "alta" ? 2 : 7), chave: `veiculo_irreg:${veiculoId}:${it.id}` });
       pendenciaId = p.id; pendencias.push(p.id);
     }
-    const [ri] = await tx.insert(checklistRespostaItem).values({ respostaId: resp.id, itemId: it.id, descricao: it.descricao, resultado: r.resultado, observacao: r.observacao ?? null, pendenciaId }).returning();
+    const [ri] = await tx.insert(checklistRespostaItem).values({ respostaId: resp.id, itemId: it.id, descricao: it.descricao, criticidade: it.criticidade, exigeFotoIrregular: it.exigeFotoIrregular, resultado: r.resultado, observacao: r.observacao ?? null, pendenciaId }).returning();
     itensIds[it.id] = ri.id;
   }
   await auditar(tx, ctx, { acao: `checklist.${tipo}`, entidadeTipo: "veiculo", entidadeId: veiculoId, depois: { respostaId: resp.id, km, irregulares: pendencias.length } });

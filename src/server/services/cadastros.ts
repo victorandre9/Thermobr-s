@@ -49,18 +49,21 @@ export async function obterCliente(dbx: DBOrTx, ctx: Ctx, id: string) {
   return { cliente: c, contatos, locais, equipamentos, contratos: contratos.map((k) => ({ ...k, valorMensalCentavos: verValores ? k.valorMensalCentavos : null })), oss };
 }
 
-export interface DadosCliente { tipo: string; nome: string; documento?: string | null; email?: string | null; telefone?: string | null; observacoes?: string | null }
+export interface DadosCliente { tipo: string; nome: string; documento?: string | null; email?: string | null; telefone?: string | null; observacoes?: string | null; versao?: number }
 export async function salvarCliente(tx: DBOrTx, ctx: Ctx, id: string | null, d: DadosCliente) {
   exigir(ctx, "cliente.gerenciar");
   if (!d.nome.trim()) throw new ErroNegocio("Informe o nome do cliente.", "nome");
   if (id) {
     const [antes] = await tx.select().from(cliente).where(and(eq(cliente.id, id), eq(cliente.empresaId, ctx.empresaId)));
     if (!antes) throw new ErroAcesso();
-    const [c] = await tx.update(cliente).set(d).where(eq(cliente.id, id)).returning();
+    const { versao, ...dados } = d;
+    const [c] = await tx.update(cliente).set({ ...dados, versao: antes.versao + 1 }).where(and(eq(cliente.id, id), eq(cliente.versao, versao ?? antes.versao))).returning();
+    if (!c) throw new ErroNegocio("Este registro foi alterado por outro usuário depois que você abriu a tela. Recarregue para ver a versão atual e refaça a alteração.");
     await auditar(tx, ctx, { acao: "cliente.atualizado", entidadeTipo: "cliente", entidadeId: id, antes, depois: c });
     return c;
   }
-  const [c] = await tx.insert(cliente).values({ ...d, empresaId: ctx.empresaId }).returning();
+  const { versao: _v, ...novo } = d; void _v;
+  const [c] = await tx.insert(cliente).values({ ...novo, empresaId: ctx.empresaId }).returning();
   await auditar(tx, ctx, { acao: "cliente.criado", entidadeTipo: "cliente", entidadeId: c.id, depois: c });
   return c;
 }
@@ -127,20 +130,21 @@ export async function listarContratos(dbx: DBOrTx, ctx: Ctx) {
   return rows.map((r) => ({ ...r.c, clienteNome: r.clienteNome, valorMensalCentavos: verValores ? r.c.valorMensalCentavos : null }));
 }
 
-export interface DadosContrato { clienteId: string; numero: string; descricao?: string | null; cobertura?: string | null; valorMensalCentavos?: number | null; inicio: string; fim?: string | null; diaVencimento: number; visitasIncluidasMes?: number | null; status: string; locais?: string[] }
+export interface DadosContrato { clienteId: string; numero: string; descricao?: string | null; cobertura?: string | null; valorMensalCentavos?: number | null; inicio: string; fim?: string | null; diaVencimento: number; visitasIncluidasMes?: number | null; status: string; locais?: string[]; versao?: number }
 export async function salvarContrato(tx: DBOrTx, ctx: Ctx, id: string | null, d: DadosContrato) {
   exigir(ctx, "contrato.gerenciar");
   await clienteDaEmpresa(tx, ctx, d.clienteId);
   if (d.diaVencimento < 1 || d.diaVencimento > 31) throw new ErroNegocio("Dia de vencimento inválido.", "diaVencimento");
   if (d.fim && d.fim < d.inicio) throw new ErroNegocio("Fim da vigência anterior ao início.", "fim");
-  const { locais, ...dados } = d;
+  const { locais, versao, ...dados } = d;
   // Valor só pode ser definido/alterado por quem vê valores; caso contrário preserva o existente.
   if (!pode(ctx, "contrato.valores.ver")) delete (dados as Partial<DadosContrato>).valorMensalCentavos;
   let r;
   if (id) {
     const [antes] = await tx.select().from(contrato).where(and(eq(contrato.id, id), eq(contrato.empresaId, ctx.empresaId)));
     if (!antes) throw new ErroAcesso();
-    [r] = await tx.update(contrato).set(dados).where(eq(contrato.id, id)).returning();
+    [r] = await tx.update(contrato).set({ ...dados, versao: antes.versao + 1 }).where(and(eq(contrato.id, id), eq(contrato.versao, versao ?? antes.versao))).returning();
+    if (!r) throw new ErroNegocio("Este registro foi alterado por outro usuário depois que você abriu a tela. Recarregue para ver a versão atual e refaça a alteração.");
     await auditar(tx, ctx, { acao: "contrato.atualizado", entidadeTipo: "contrato", entidadeId: id, antes, depois: r, sensivel: antes.valorMensalCentavos !== r.valorMensalCentavos });
   } else {
     [r] = await tx.insert(contrato).values({ ...dados, empresaId: ctx.empresaId }).returning();

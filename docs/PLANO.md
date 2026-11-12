@@ -91,3 +91,19 @@ Princípios de consistência:
 - API de pedidos Treeunfe: confirmar documentação oficial e permissão do plano contratado.
 - Credenciais Neon / bucket privado S3 compatível / domínio — configuração na Vercel.
 - Estrutura real da equipe (nomes, vínculos), valores combinados com autônomos, parâmetros de manutenção por veículo.
+
+## Aditivo (recebido durante a Fase 5) — checklist
+- [ ] A1 Recomendação de técnicos (competências, regiões, disponibilidade, qtd, recursos exclusivos, continuidade; motivos e dados faltantes; confirmação humana)
+- [ ] A2 Prontidão da visita (pronta / com pendências; impeditivo × alerta; exceção autorizada com justificativa)
+- [ ] A4 Pagamento realizado sem aprovação prévia = exceção com comprovante e revisão; política configurável sinalizada se indefinida
+- [ ] A5 Origem única das cobranças; bloqueio explícito de dividir pedido em várias OS; cancelamento com recebimento exige estorno/devolução
+- [ ] A6 Base da remuneração do autônomo (serviço/visita/pacote), adicional de retorno autorizado, "coberto pelo acordo"
+- [ ] A7 Checklists versionados; snapshot na resposta; reutilização por recurso+responsável+validade+composição do kit; componentes de conjuntos
+- [ ] A8 Estoque inicial conferido; sem conversão de unidades
+- [ ] A9 Recursos exclusivos (veículo/ferramenta) sem conflito; responsável inicia/encerra; participação individual dos demais
+- [ ] A10 Central de pendências: críticas/vencidas, hoje, semana, aguardando terceiro; próxima ação
+- [ ] A11 Data esperada de recebimento ≠ vencimento; vencidos sem previsão à parte; implantação (data de corte, legado, estoque/custódia inicial)
+- [ ] A12 Relatório de atendimento em PDF (visita ou OS), campos externos explícitos, ciência registrada (não é assinatura)
+- [ ] A13 Controle de versão otimista; rotinas agendadas registradas e idempotentes (Vercel Cron)
+- [ ] A15 Backlog de evoluções documentado
+- [ ] A17 Testes do aditivo

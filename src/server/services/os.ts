@@ -53,6 +53,10 @@ export async function criarOS(tx: DBOrTx, ctx: Ctx, d: NovaOS) {
     const [o] = await tx.select().from(ordemServico).where(and(eq(ordemServico.id, d.osOrigemId), eq(ordemServico.empresaId, ctx.empresaId)));
     if (!o || o.clienteId !== d.clienteId) throw new ErroNegocio("OS de origem inválida para este cliente.", "osOrigemId");
   }
+  if (d.pedidoExternoId) {
+    const [ja] = await tx.select({ numero: ordemServico.numero }).from(ordemServico).where(eq(ordemServico.pedidoExternoId, d.pedidoExternoId));
+    if (ja) throw new ErroNegocio(`Este pedido já originou a OS ${ja.numero}. Dividir um pedido em várias OS não é suportado (evita multiplicar o valor vendido). Use várias visitas na mesma OS.`);
+  }
   const numero = await proximoNumero(tx, ctx.empresaId, "os");
   // Retorno/garantia e contrato não são venda nova: aprovados operacionalmente sem gerar cobrança automática.
   const aprovada = d.aprovada ?? d.origem !== "avulso";
@@ -123,17 +127,19 @@ export async function decidirItemExtra(tx: DBOrTx, ctx: Ctx, itemId: string, apr
   await tocarOS(tx, it.i.osId);
 }
 
-export async function atualizarOS(tx: DBOrTx, ctx: Ctx, osId: string, d: Partial<Pick<NovaOS, "descricao" | "prioridade" | "observacoes" | "localId" | "contatoId" | "equipamentos">> & { responsavelResolucaoId?: string | null; proximaAcao?: string | null; proximaAcaoEm?: string | null; situacaoMaterial?: string; motivoEtapa?: string | null }) {
+export async function atualizarOS(tx: DBOrTx, ctx: Ctx, osId: string, d: Partial<Pick<NovaOS, "descricao" | "prioridade" | "observacoes" | "localId" | "contatoId" | "equipamentos">> & { responsavelResolucaoId?: string | null; proximaAcao?: string | null; proximaAcaoEm?: string | null; situacaoMaterial?: string; motivoEtapa?: string | null; competenciasExigidas?: string[]; qtdProfissionais?: number; versao?: number }) {
   exigir(ctx, "os.gerenciar");
   const [antes] = await tx.select().from(ordemServico).where(and(eq(ordemServico.id, osId), eq(ordemServico.empresaId, ctx.empresaId)));
   if (!antes) throw new ErroAcesso();
   if (["encerrada", "cancelada"].includes(antes.etapa)) throw new ErroNegocio("OS encerrada/cancelada não pode ser editada. Abra um retorno vinculado se necessário.");
-  const { equipamentos, ...campos } = d;
+  const { equipamentos, versao: versaoEsperada, ...campos } = d;
+  if (versaoEsperada !== undefined && versaoEsperada !== antes.versao) throw new ErroNegocio("Este registro foi alterado por outro usuário depois que você abriu a tela. Recarregue para ver a versão atual e refaça a alteração.");
   if (campos.responsavelResolucaoId) {
     const [u] = await tx.select().from(usuario).where(and(eq(usuario.id, campos.responsavelResolucaoId), eq(usuario.empresaId, ctx.empresaId)));
     if (!u) throw new ErroNegocio("Responsável inválido.");
   }
-  const [depois] = await tx.update(ordemServico).set({ ...campos, ultimoAvancoEm: new Date() }).where(eq(ordemServico.id, osId)).returning();
+  const [depois] = await tx.update(ordemServico).set({ ...campos, versao: antes.versao + 1, ultimoAvancoEm: new Date() }).where(and(eq(ordemServico.id, osId), eq(ordemServico.versao, antes.versao))).returning();
+  if (!depois) throw new ErroNegocio("Este registro foi alterado por outro usuário depois que você abriu a tela. Recarregue para ver a versão atual e refaça a alteração.");
   if (equipamentos) {
     await tx.delete(osEquipamento).where(eq(osEquipamento.osId, osId));
     if (equipamentos.length) await vincularEquipamentos(tx, osId, antes.clienteId, equipamentos);

@@ -137,6 +137,10 @@ export const profissional = pgTable("profissional", {
   funcao: text("funcao").notNull().default("tecnico"), // tecnico | ajudante | administrativo | comercial | outro
   telefone: text("telefone"),
   veiculoId: uuid("veiculo_id"),
+  /** Competências/tipos de serviço cadastrados (ex.: instalacao_split, vrf, eletrica). Nunca inferidas. */
+  competencias: jsonb("competencias").$type<string[]>().notNull().default([]),
+  /** Regiões de atendimento cadastradas (bairros/cidades). Sem geolocalização. */
+  regioes: jsonb("regioes").$type<string[]>().notNull().default([]),
   ativo: boolean("ativo").notNull().default(true),
   observacoes: text("observacoes"),
   criadoEm: criadoEm(),
@@ -156,6 +160,7 @@ export const cliente = pgTable("cliente", {
   observacoes: text("observacoes"),
   ativo: boolean("ativo").notNull().default(true),
   demo: boolean("demo").notNull().default(false),
+  versao: integer("versao").notNull().default(0),
   criadoEm: criadoEm(),
 }, (t) => [index("cliente_empresa_nome_idx").on(t.empresaId, t.nome)]);
 
@@ -227,6 +232,7 @@ export const contrato = pgTable("contrato", {
   diaVencimento: smallint("dia_vencimento").notNull().default(10),
   visitasIncluidasMes: smallint("visitas_incluidas_mes"),
   status: text("status").notNull().default("ativo"), // ativo | suspenso | encerrado
+  versao: integer("versao").notNull().default(0),
   criadoEm: criadoEm(),
 }, (t) => [uniqueIndex("contrato_numero_uq").on(t.empresaId, t.numero)]);
 
@@ -331,6 +337,11 @@ export const ordemServico = pgTable("ordem_servico", {
   encerradaEm: ts("encerrada_em"),
   canceladaMotivo: text("cancelada_motivo"),
   demo: boolean("demo").notNull().default(false),
+  /** Requisitos para recomendação de técnicos (cadastrados pelo escritório). */
+  competenciasExigidas: jsonb("competencias_exigidas").$type<string[]>().notNull().default([]),
+  qtdProfissionais: smallint("qtd_profissionais").notNull().default(1),
+  /** Controle de concorrência otimista: edição com versão antiga é rejeitada. */
+  versao: integer("versao").notNull().default(0),
   ultimoAvancoEm: ts("ultimo_avanco_em").notNull().defaultNow(),
   criadoEm: criadoEm(),
 }, (t) => [
@@ -494,6 +505,9 @@ export const pendencia = pgTable("pendencia", {
   resolucao: text("resolucao"),
   /** Liberação excepcional do gestor (ex.: veículo com irregularidade crítica). */
   liberacaoExcepcional: text("liberacao_excepcional"),
+  proximaAcao: text("proxima_acao"),
+  /** Quando a resolução depende de terceiro (fornecedor, cliente, oficina): quem/qual condição. */
+  aguardandoTerceiro: text("aguardando_terceiro"),
 }, (t) => [index("pendencia_empresa_sit_idx").on(t.empresaId, t.situacao)]);
 
 // ---------------------------------------------------------------------------
@@ -513,6 +527,7 @@ export const veiculo = pgTable("veiculo", {
   parametrosManutencao: jsonb("parametros_manutencao").$type<Record<string, { km?: number | null; dias?: number | null }>>().notNull().default({}),
   ativo: boolean("ativo").notNull().default(true),
   demo: boolean("demo").notNull().default(false),
+  versao: integer("versao").notNull().default(0),
 }, (t) => [uniqueIndex("veiculo_ident_uq").on(t.empresaId, t.identificacao)]);
 
 export const veiculoOdometro = pgTable("veiculo_odometro", {
@@ -565,6 +580,8 @@ export const checklistModelo = pgTable("checklist_modelo", {
   /** veiculo_saida | veiculo_retorno | ferramentas_saida | ferramentas_retorno */
   tipo: text("tipo").notNull(),
   nome: text("nome").notNull(),
+  /** Versão do modelo. Alterações criam nova versão; respostas antigas apontam para a versão usada. */
+  versao: integer("versao").notNull().default(1),
   /** Validade de uma resposta para reutilização (horas). Ex.: 12h = turno. */
   validadeHoras: integer("validade_horas").notNull().default(12),
   ativo: boolean("ativo").notNull().default(true),
@@ -590,6 +607,9 @@ export const checklistResposta = pgTable("checklist_resposta", {
   profissionalId: uuid("profissional_id").references(() => profissional.id),
   usuarioId: uuid("usuario_id").notNull().references(() => usuario.id),
   km: integer("km"),
+  modeloVersao: integer("modelo_versao").notNull().default(1),
+  /** Composição conferida (kit de ferramentas): hash dos itens; reutilização exige a mesma composição. */
+  composicaoHash: text("composicao_hash"),
   realizadoEm: criadoEm(),
   validoAte: ts("valido_ate").notNull(),
   observacoes: text("observacoes"),
@@ -602,6 +622,9 @@ export const checklistRespostaItem = pgTable("checklist_resposta_item", {
   itemId: uuid("item_id").references(() => checklistModeloItem.id),
   ferramentaId: uuid("ferramenta_id"),
   descricao: text("descricao").notNull(),
+  /** Snapshot das regras da versão usada. */
+  criticidade: text("criticidade"),
+  exigeFotoIrregular: boolean("exige_foto_irregular").notNull().default(false),
   resultado: text("resultado").notNull(), // conforme | irregular | nao_aplica
   observacao: text("observacao"),
   pendenciaId: uuid("pendencia_id"),
@@ -627,6 +650,8 @@ export const ferramenta = pgTable("ferramenta", {
   custodianteVeiculoId: uuid("custodiante_veiculo_id").references(() => veiculo.id),
   custodiaDesde: ts("custodia_desde"),
   osReservaId: uuid("os_reserva_id"),
+  /** Recurso exclusivo: reservado por intervalo na agenda (sem sobreposição). */
+  exclusiva: boolean("exclusiva").notNull().default(false),
   versao: integer("versao").notNull().default(0),
   ativo: boolean("ativo").notNull().default(true),
 }, (t) => [uniqueIndex("ferramenta_codigo_uq").on(t.empresaId, t.codigo)]);
@@ -675,6 +700,7 @@ export const material = pgTable("material", {
   /** Custo de referência (restrito: material.custos.ver). */
   custoReferenciaCentavos: centavos("custo_referencia_centavos"),
   ativo: boolean("ativo").notNull().default(true),
+  versao: integer("versao").notNull().default(0),
 }, (t) => [uniqueIndex("material_codigo_uq").on(t.empresaId, t.codigo)]);
 
 /**
@@ -884,6 +910,9 @@ export const obrigacao = pgTable("obrigacao", {
   canceladaPor: uuid("cancelada_por").references(() => usuario.id),
   canceladaMotivo: text("cancelada_motivo"),
   demo: boolean("demo").notNull().default(false),
+  /** Obrigação anterior à data de corte (implantação): não é venda nova do período. */
+  legado: boolean("legado").notNull().default(false),
+  versao: integer("versao").notNull().default(0),
 }, (t) => [
   uniqueIndex("obrigacao_chave_uq").on(t.empresaId, t.chaveUnicidade),
   index("obrigacao_empresa_nat_idx").on(t.empresaId, t.natureza),
@@ -895,6 +924,8 @@ export const parcela = pgTable("parcela", {
   numero: integer("numero").notNull(),
   descricao: text("descricao"), // "Entrada", "Parcela 2/3"
   vencimento: date("vencimento").notNull(),
+  /** Data esperada de recebimento/pagamento (combinada na cobrança). Distinta do vencimento contratual. */
+  dataEsperada: date("data_esperada"),
   valorCentavos: centavos("valor_centavos").notNull(),
   cancelada: boolean("cancelada").notNull().default(false),
   canceladaMotivo: text("cancelada_motivo"),
@@ -921,6 +952,8 @@ export const baixa = pgTable("baixa", {
   confirmadaPor: uuid("confirmada_por").references(() => usuario.id),
   confirmadaEm: ts("confirmada_em"),
   autoconfirmacao: boolean("autoconfirmacao").notNull().default(false),
+  /** Pagamento que efetivamente ocorreu sem aprovação prévia: registrado com comprovante e exceção para revisão. */
+  excecaoSemAprovacao: boolean("excecao_sem_aprovacao").notNull().default(false),
   chaveIdempotencia: text("chave_idempotencia"),
 }, (t) => [uniqueIndex("baixa_idem_uq").on(t.chaveIdempotencia), index("baixa_parcela_idx").on(t.parcelaId)]);
 
@@ -980,6 +1013,13 @@ export const autonomoServico = pgTable("autonomo_servico", {
   osId: uuid("os_id").notNull().references(() => ordemServico.id),
   profissionalId: uuid("profissional_id").notNull().references(() => profissional.id),
   descricao: text("descricao").notNull(),
+  /** Base do acordo: servico | visita | pacote | adicional_retorno */
+  base: text("base").notNull().default("servico"),
+  /** Diferencia linhas na mesma OS: principal | visita:<id> | adicional:<n> */
+  chave: text("chave").notNull().default("principal"),
+  visitaId: uuid("visita_id"),
+  /** Atendimento já coberto por acordo anterior (ex.: pacote, OS original do retorno): não gera novo pagamento. */
+  cobertoPorId: uuid("coberto_por_id"),
   valorCombinadoCentavos: centavos("valor_combinado_centavos"),
   valorDefinidoPor: uuid("valor_definido_por").references(() => usuario.id),
   /** aguardando_valor | aguardando_conferencia | conferido | liberado | pago | cancelado */
@@ -990,7 +1030,7 @@ export const autonomoServico = pgTable("autonomo_servico", {
   liberadoEm: ts("liberado_em"),
   resumoId: uuid("resumo_id"),
   criadoEm: criadoEm(),
-}, (t) => [uniqueIndex("autonomo_servico_uq").on(t.osId, t.profissionalId)]);
+}, (t) => [uniqueIndex("autonomo_servico_uq").on(t.osId, t.profissionalId, t.chave)]);
 
 export const adiantamento = pgTable("adiantamento", {
   id: id(),
@@ -1072,3 +1112,76 @@ export const auditoria = pgTable("auditoria", {
   sensivel: boolean("sensivel").notNull().default(false),
   em: criadoEm(),
 }, (t) => [index("auditoria_ent_idx").on(t.entidadeTipo, t.entidadeId), index("auditoria_em_idx").on(t.empresaId, t.em)]);
+
+// ---------------------------------------------------------------------------
+// Aditivo: recursos exclusivos, participação, prontidão, relatórios, rotinas
+// ---------------------------------------------------------------------------
+/** Reserva de recurso exclusivo (veículo ou ferramenta) por intervalo. EXCLUDE impede sobreposição. */
+export const recursoReserva = pgTable("recurso_reserva", {
+  id: id(),
+  empresaId: empresaId(),
+  visitaId: uuid("visita_id").notNull().references(() => visita.id),
+  veiculoId: uuid("veiculo_id").references(() => veiculo.id),
+  ferramentaId: uuid("ferramenta_id").references(() => ferramenta.id),
+  periodo: tstzrange("periodo").notNull(),
+  ativo: boolean("ativo").notNull().default(true),
+  criadoPor: uuid("criado_por").references(() => usuario.id),
+  criadoEm: criadoEm(),
+}, (t) => [index("recurso_reserva_visita_idx").on(t.visitaId)]);
+
+/** Participação individual: cada integrante registra a própria chegada/saída. O responsável inicia/encerra a visita. */
+export const visitaParticipacao = pgTable("visita_participacao", {
+  id: id(),
+  visitaId: uuid("visita_id").notNull().references(() => visita.id),
+  profissionalId: uuid("profissional_id").notNull().references(() => profissional.id),
+  chegadaEm: ts("chegada_em"),
+  saidaEm: ts("saida_em"),
+  observacao: text("observacao"),
+  registradoPor: uuid("registrado_por").notNull().references(() => usuario.id),
+}, (t) => [uniqueIndex("visita_part_uq").on(t.visitaId, t.profissionalId)]);
+
+/** Exceção autorizada de prontidão (item impeditivo liberado com justificativa). */
+export const visitaLiberacao = pgTable("visita_liberacao", {
+  id: id(),
+  visitaId: uuid("visita_id").notNull().references(() => visita.id),
+  item: text("item").notNull(),
+  justificativa: text("justificativa").notNull(),
+  autorizadoPor: uuid("autorizado_por").notNull().references(() => usuario.id),
+  em: criadoEm(),
+}, (t) => [uniqueIndex("visita_lib_uq").on(t.visitaId, t.item)]);
+
+/** Relatório de atendimento emitido (visita ou OS), versionado, com snapshot dos campos externos e ciência. */
+export const relatorioAtendimento = pgTable("relatorio_atendimento", {
+  id: id(),
+  empresaId: empresaId(),
+  escopo: text("escopo").notNull(), // visita | os
+  osId: uuid("os_id").notNull().references(() => ordemServico.id),
+  visitaId: uuid("visita_id").references(() => visita.id),
+  versao: integer("versao").notNull(),
+  /** Somente campos da lista permitida para documento externo. */
+  conteudo: jsonb("conteudo").$type<Record<string, unknown>>().notNull(),
+  anexosIds: jsonb("anexos_ids").$type<string[]>().notNull().default([]),
+  emitidoPor: uuid("emitido_por").notNull().references(() => usuario.id),
+  emitidoEm: criadoEm(),
+  /** registrada | ausente | recusada | pendente — ciência não é assinatura digital certificada. */
+  cienciaSituacao: text("ciencia_situacao").notNull().default("pendente"),
+  cienciaNome: text("ciencia_nome"),
+  cienciaEm: ts("ciencia_em"),
+  cienciaObservacao: text("ciencia_observacao"),
+  cienciaRegistradaPor: uuid("ciencia_registrada_por").references(() => usuario.id),
+}, (t) => [uniqueIndex("relatorio_versao_uq").on(t.osId, t.escopo, sql`coalesce(${t.visitaId}, '00000000-0000-0000-0000-000000000000'::uuid)`, t.versao)]);
+
+/** Execuções de rotinas agendadas (recorrência, sincronização). chave única por período = idempotência. */
+export const rotinaExecucao = pgTable("rotina_execucao", {
+  id: id(),
+  empresaId: uuid("empresa_id").references(() => empresa.id),
+  rotina: text("rotina").notNull(),
+  chave: text("chave").notNull(),
+  status: text("status").notNull(), // executando | sucesso | erro
+  tentativa: integer("tentativa").notNull().default(1),
+  iniciadoEm: criadoEm(),
+  finalizadoEm: ts("finalizado_em"),
+  mensagem: text("mensagem"),
+  resultado: jsonb("resultado").$type<unknown>(),
+  disparadoPor: text("disparado_por").notNull().default("agendador"), // agendador | usuario:<id>
+}, (t) => [uniqueIndex("rotina_chave_uq").on(t.rotina, t.chave)]);

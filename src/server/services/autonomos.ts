@@ -149,3 +149,30 @@ export async function listarAdiantamentos(dbx: DBOrTx, ctx: Ctx) {
     .where(eq(adiantamento.empresaId, ctx.empresaId)).orderBy(desc(adiantamento.data));
 }
 
+
+/**
+ * Acordo adicional (gestor): visita específica, pacote ou adicional de retorno autorizado.
+ * Não gera receita ao cliente. A chave impede duplicar a mesma linha.
+ */
+export async function adicionarAcordoAutonomo(tx: DBOrTx, ctx: Ctx, d: { osId: string; profissionalId: string; base: "servico" | "visita" | "pacote" | "adicional_retorno"; visitaId?: string | null; descricao: string; valorCentavos: number; motivo: string }) {
+  exigir(ctx, "autonomo.valores.definir");
+  if (!d.motivo?.trim()) throw new ErroNegocio("Justifique o acordo adicional.");
+  const [p] = await tx.select().from(profissional).where(and(eq(profissional.id, d.profissionalId), eq(profissional.empresaId, ctx.empresaId)));
+  if (!p || p.vinculo !== "autonomo") throw new ErroNegocio("Acordos de remuneração por serviço são apenas para autônomos.");
+  const [o] = await tx.select().from(ordemServico).where(and(eq(ordemServico.id, d.osId), eq(ordemServico.empresaId, ctx.empresaId)));
+  if (!o) throw new ErroAcesso();
+  const chave = d.base === "visita" && d.visitaId ? `visita:${d.visitaId}` : `${d.base}:${Date.now()}`;
+  const [r] = await tx.insert(autonomoServico).values({ empresaId: ctx.empresaId, osId: d.osId, profissionalId: p.id, descricao: d.descricao, base: d.base, chave, visitaId: d.visitaId ?? null, valorCombinadoCentavos: d.valorCentavos, valorDefinidoPor: ctx.usuarioId, situacao: o.etapa === "encerrada" ? "aguardando_conferencia" : "aguardando_valor" }).returning();
+  await auditar(tx, ctx, { acao: "autonomo.acordo_adicional", entidadeTipo: "autonomo_servico", entidadeId: r.id, motivo: d.motivo, depois: { base: d.base, valor: d.valorCentavos }, sensivel: true });
+  return r;
+}
+
+/** Marca o atendimento como já coberto pelo acordo original (ex.: pacote, OS de origem do retorno): não gera novo pagamento. */
+export async function marcarCoberto(tx: DBOrTx, ctx: Ctx, servicoId: string, cobertoPorId: string | null, motivo: string) {
+  exigir(ctx, "autonomo.valores.definir");
+  if (!motivo?.trim()) throw new ErroNegocio("Informe o acordo que já cobre este atendimento.");
+  const [s] = await tx.update(autonomoServico).set({ situacao: "cancelado", cobertoPorId, valorCombinadoCentavos: 0, valorDefinidoPor: ctx.usuarioId, descricao: sql`${autonomoServico.descricao} || ' (coberto pelo acordo original)'` })
+    .where(and(eq(autonomoServico.id, servicoId), eq(autonomoServico.empresaId, ctx.empresaId), inArray(autonomoServico.situacao, ["aguardando_valor", "aguardando_conferencia"]))).returning();
+  if (!s) throw new ErroNegocio("Serviço não pode ser marcado (já conferido, liberado ou pago).");
+  await auditar(tx, ctx, { acao: "autonomo.coberto", entidadeTipo: "autonomo_servico", entidadeId: servicoId, motivo, depois: { cobertoPorId }, sensivel: true });
+}

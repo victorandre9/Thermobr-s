@@ -7,7 +7,8 @@ export interface ConfigEmpresa {
   materiais: { prazoCustodiaDias: number };
   ferramentas: { prazoDevolucaoDias: number };
   veiculos: { checklistSaidaObrigatorio: boolean; checklistRetornoObrigatorio: boolean; bloquearComIrregularidadeCritica: boolean; alertaAntecedenciaKm: number; alertaAntecedenciaDias: number };
-  financeiro: { prazoProjecaoPadraoDias: number };
+  financeiro: { prazoProjecaoPadraoDias: number; /** Política de delegação ao operador definida pelos donos? Enquanto false, a tela sinaliza pendência. */ politicaDelegacaoDefinida: boolean; observacaoPolitica: string };
+  implantacao: { /** Data de corte da entrada em operação (saldos iniciais e legado referem-se a ela). */ dataCorte: string | null };
   agenda: { duracaoPadraoMin: number };
 }
 
@@ -16,7 +17,8 @@ export const CONFIG_PADRAO: ConfigEmpresa = {
   materiais: { prazoCustodiaDias: 15 },
   ferramentas: { prazoDevolucaoDias: 7 },
   veiculos: { checklistSaidaObrigatorio: true, checklistRetornoObrigatorio: false, bloquearComIrregularidadeCritica: true, alertaAntecedenciaKm: 1000, alertaAntecedenciaDias: 15 },
-  financeiro: { prazoProjecaoPadraoDias: 30 },
+  financeiro: { prazoProjecaoPadraoDias: 30, politicaDelegacaoDefinida: false, observacaoPolitica: "" },
+  implantacao: { dataCorte: null },
   agenda: { duracaoPadraoMin: 240 },
 };
 

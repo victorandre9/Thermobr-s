@@ -1,4 +1,5 @@
 /** Ferramentas: custódia com pessoa responsável identificável, movimentos com confirmação, checklist de saída/retorno reutilizável. */
+import { createHash } from "node:crypto";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { qc } from "../db/sql";
 import type { DBOrTx } from "../db";
@@ -73,6 +74,7 @@ export async function confirmarFerramenta(tx: DBOrTx, ctx: Ctx, movimentoId: str
   if (!up) { if (m.status === "confirmado") return { repetido: true }; throw new ErroNegocio("Movimento não está pendente."); }
   const f = await obter(tx, ctx, m.ferramentaId, true);
   await tx.update(ferramenta).set({ situacao: "em_custodia", custodianteProfissionalId: m.paraProfissionalId, custodianteVeiculoId: m.veiculoId, custodiaDesde: new Date(), osReservaId: null, condicao: condicao ?? f.condicao, versao: f.versao + 1 }).where(eq(ferramenta.id, f.id));
+  if (f.tipo === "conjunto") await tx.update(ferramenta).set({ custodianteProfissionalId: m.paraProfissionalId, custodiaDesde: new Date(), situacao: "em_custodia" }).where(and(eq(ferramenta.conjuntoId, f.id), inArray(ferramenta.situacao, ["disponivel", "em_custodia", "aguardando_confirmacao", "reservada"])));
   if (condicao === "danificada" && f.condicao !== "danificada") await garantirPendencia(tx, ctx, { tipo: "ferramenta_dano", titulo: `Ferramenta recebida danificada: ${f.nome}`, descricao: observacao, ferramentaId: f.id, profissionalId: ctx.profissional!.id, prioridade: "media", chave: `ferramenta_dano:${f.id}` });
   await auditar(tx, ctx, { acao: `ferramenta.${m.tipo}_confirmada`, entidadeTipo: "ferramenta", entidadeId: f.id, depois: { custodiante: m.paraProfissionalId } });
   return { repetido: false };
@@ -152,8 +154,20 @@ export async function localizarFerramenta(tx: DBOrTx, ctx: Ctx, id: string, obse
 }
 
 // ---------------------------------------------------------------- checklist de ferramentas (saída/retorno)
+/** Itens esperados do kit: ferramentas sob custódia; conjuntos listam também os componentes (conferir a mala não comprova o conteúdo). */
+export async function kitEsperado(dbx: DBOrTx, ctx: Ctx, profissionalId: string) {
+  const minhas = await dbx.select().from(ferramenta).where(and(eq(ferramenta.empresaId, ctx.empresaId), eq(ferramenta.custodianteProfissionalId, profissionalId), inArray(ferramenta.situacao, ["em_custodia", "devolucao_pendente"])));
+  const conjuntos = minhas.filter((f) => f.tipo === "conjunto").map((f) => f.id);
+  const componentes = conjuntos.length ? await dbx.select().from(ferramenta).where(and(inArray(ferramenta.conjuntoId, conjuntos), eq(ferramenta.ativo, true))) : [];
+  const todos = [...minhas, ...componentes.filter((c) => !minhas.some((m) => m.id === c.id))];
+  const hash = createHash("sha256").update(todos.map((f) => f.id).sort().join(",")).digest("hex").slice(0, 32);
+  return { itens: todos, hash };
+}
+
+/** Reutilização exige: mesmo responsável, mesmo tipo, dentro da validade E mesma composição do kit. */
 export async function checklistFerramentasValido(dbx: DBOrTx, ctx: Ctx, profissionalId: string, tipo: "ferramentas_saida" | "ferramentas_retorno") {
-  const [r] = await dbx.select().from(checklistResposta).where(and(eq(checklistResposta.empresaId, ctx.empresaId), eq(checklistResposta.profissionalId, profissionalId), eq(checklistResposta.tipo, tipo), sql`${qc(checklistResposta.validoAte)} > now()`)).orderBy(desc(checklistResposta.realizadoEm)).limit(1);
+  const { hash } = await kitEsperado(dbx, ctx, profissionalId);
+  const [r] = await dbx.select().from(checklistResposta).where(and(eq(checklistResposta.empresaId, ctx.empresaId), eq(checklistResposta.profissionalId, profissionalId), eq(checklistResposta.tipo, tipo), eq(checklistResposta.composicaoHash, hash), sql`${qc(checklistResposta.validoAte)} > now()`)).orderBy(desc(checklistResposta.realizadoEm)).limit(1);
   return r ?? null;
 }
 
@@ -166,12 +180,12 @@ export async function responderChecklistFerramentas(tx: DBOrTx, ctx: Ctx, tipo: 
   if (valido) return { resposta: valido, reutilizado: true };
   const [modelo] = await tx.select().from(checklistModelo).where(and(eq(checklistModelo.empresaId, ctx.empresaId), eq(checklistModelo.tipo, tipo), eq(checklistModelo.ativo, true)));
   if (!modelo) throw new ErroNegocio("Modelo de checklist não configurado.");
-  const minhas = await tx.select().from(ferramenta).where(and(eq(ferramenta.empresaId, ctx.empresaId), eq(ferramenta.custodianteProfissionalId, prof.id), inArray(ferramenta.situacao, ["em_custodia", "devolucao_pendente"])));
+  const { itens: minhas, hash } = await kitEsperado(tx, ctx, prof.id);
   const faltandoResposta = minhas.filter((f) => !respostas.some((r) => r.ferramentaId === f.id));
   if (faltandoResposta.length) throw new ErroNegocio(`Responda todos os itens (${faltandoResposta.length} sem resposta).`);
   if (respostas.some((r) => !minhas.some((f) => f.id === r.ferramentaId))) throw new ErroAcesso("Você só confere ferramentas sob sua responsabilidade.");
   for (const r of respostas) if (r.resultado === "irregular" && !r.observacao?.trim()) throw new ErroNegocio("Descreva cada irregularidade.");
-  const [resp] = await tx.insert(checklistResposta).values({ empresaId: ctx.empresaId, modeloId: modelo.id, tipo, profissionalId: prof.id, usuarioId: ctx.usuarioId, validoAte: sql`now() + make_interval(hours => ${modelo.validadeHoras})` as unknown as Date, chaveIdempotencia: chave ?? null }).returning();
+  const [resp] = await tx.insert(checklistResposta).values({ empresaId: ctx.empresaId, modeloId: modelo.id, tipo, profissionalId: prof.id, usuarioId: ctx.usuarioId, modeloVersao: modelo.versao, composicaoHash: hash, validoAte: sql`now() + make_interval(hours => ${modelo.validadeHoras})` as unknown as Date, chaveIdempotencia: chave ?? null }).returning();
   for (const r of respostas) {
     const f = minhas.find((x) => x.id === r.ferramentaId)!;
     let pendenciaId: string | null = null;

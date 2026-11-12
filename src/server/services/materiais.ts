@@ -26,11 +26,12 @@ import { criarObrigacao } from "./financeiro";
 type Mov = typeof materialMovimento.$inferSelect;
 
 // ---------------------------------------------------------------- cadastro
-export async function salvarMaterial(tx: DBOrTx, ctx: Ctx, id: string | null, d: { codigo: string; nome: string; categoria?: string | null; especificacao?: string | null; unidade: string; controlaRetalho?: boolean; estoqueMinimo?: string | null; custoReferenciaCentavos?: number | null; ativo?: boolean }) {
+export async function salvarMaterial(tx: DBOrTx, ctx: Ctx, id: string | null, d: { codigo: string; nome: string; categoria?: string | null; especificacao?: string | null; unidade: string; controlaRetalho?: boolean; estoqueMinimo?: string | null; custoReferenciaCentavos?: number | null; ativo?: boolean; versao?: number }) {
   exigir(ctx, "material.gerenciar");
   if (!UNIDADES[d.unidade]) throw new ErroNegocio("Unidade inválida.", "unidade");
   if (!d.codigo.trim() || !d.nome.trim()) throw new ErroNegocio("Código e nome são obrigatórios.");
-  const vals = { ...d, fracionavel: UNIDADES[d.unidade].fracionavel, estoqueMinimo: d.estoqueMinimo ? fromMilli(toMilli(d.estoqueMinimo)) : null };
+  const { versao, ...dd } = d;
+  const vals = { ...dd, fracionavel: UNIDADES[d.unidade].fracionavel, estoqueMinimo: d.estoqueMinimo ? fromMilli(toMilli(d.estoqueMinimo)) : null };
   if (!pode(ctx, "material.custos.ver")) delete (vals as Partial<typeof vals>).custoReferenciaCentavos;
   if (id) {
     const [antes] = await tx.select().from(material).where(and(eq(material.id, id), eq(material.empresaId, ctx.empresaId)));
@@ -39,7 +40,8 @@ export async function salvarMaterial(tx: DBOrTx, ctx: Ctx, id: string | null, d:
       const [{ n }] = await tx.select({ n: sql<number>`count(*)::int` }).from(materialMovimento).where(eq(materialMovimento.materialId, id));
       if (n > 0) throw new ErroNegocio("Material com movimentos não pode trocar de unidade (evita misturar metros, unidades e quilos). Cadastre outro material.");
     }
-    const [r] = await tx.update(material).set(vals).where(eq(material.id, id)).returning();
+    const [r] = await tx.update(material).set({ ...vals, versao: antes.versao + 1 }).where(and(eq(material.id, id), eq(material.versao, versao ?? antes.versao))).returning();
+    if (!r) throw new ErroNegocio("Este registro foi alterado por outro usuário depois que você abriu a tela. Recarregue para ver a versão atual e refaça a alteração.");
     await auditar(tx, ctx, { acao: "material.atualizado", entidadeTipo: "material", entidadeId: id, antes, depois: r });
     return r;
   }
@@ -435,8 +437,8 @@ export async function saldosPorPosicao(dbx: DBOrTx, ctx: Ctx, f: { posicaoId?: s
   return dbx.select({
     materialId: material.id, materialNome: material.nome, especificacao: material.especificacao, unidade: material.unidade, posicaoId: materialPosicao.id, posicaoNome: materialPosicao.nome, posicaoTipo: materialPosicao.tipo,
     quantidade: materialSaldo.quantidade, reservado: materialSaldo.reservado, atualizadoEm: materialSaldo.atualizadoEm,
-    ultimaContagem: sql<string | null>`(select c.quantidade_contada from ${materialContagem} c where c.material_id = ${qc(materialSaldo.materialId)} and c.posicao_id = ${qc(materialSaldo.posicaoId)} order by c.em desc limit 1)`,
-    ultimaContagemEm: sql<string | null>`(select c.em from ${materialContagem} c where c.material_id = ${qc(materialSaldo.materialId)} and c.posicao_id = ${qc(materialSaldo.posicaoId)} order by c.em desc limit 1)`,
+    ultimaContagem: sql<string | null>`(select c.quantidade_contada from ${materialContagem} c where c.material_id = ${qc(materialSaldo.materialId)} and c.posicao_id = ${qc(materialSaldo.posicaoId)} order by c.criado_em desc limit 1)`,
+    ultimaContagemEm: sql<string | null>`(select c.criado_em from ${materialContagem} c where c.material_id = ${qc(materialSaldo.materialId)} and c.posicao_id = ${qc(materialSaldo.posicaoId)} order by c.criado_em desc limit 1)`,
   }).from(materialSaldo).innerJoin(material, eq(material.id, materialSaldo.materialId)).innerJoin(materialPosicao, eq(materialPosicao.id, materialSaldo.posicaoId))
     .where(and(...conds)).orderBy(asc(materialPosicao.nome), asc(material.nome));
 }

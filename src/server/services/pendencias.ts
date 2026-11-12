@@ -6,7 +6,7 @@ import { type Ctx, exigir, pode } from "../auth/contexto";
 import { ErroAcesso, ErroNegocio } from "../erros";
 import { auditar } from "./auditoria";
 import { notificarPorPermissao, encerrarNotificacoes } from "./notificacoes";
-import { hojeSP } from "@/lib/datas";
+import { hojeSP, inicioSemana, somarDias } from "@/lib/datas";
 
 export interface NovaPendencia {
   tipo: string; titulo: string; descricao?: string | null; prioridade?: string;
@@ -40,12 +40,12 @@ export async function resolverPendencia(tx: DBOrTx, ctx: Ctx, id: string, resolu
   await auditar(tx, ctx, { acao: `pendencia.${situacao}`, entidadeTipo: "pendencia", entidadeId: id, motivo: resolucao });
 }
 
-export async function atribuirPendencia(tx: DBOrTx, ctx: Ctx, id: string, d: { responsavelId: string | null; prazo: string | null; prioridade?: string; liberacaoExcepcional?: string | null }) {
+export async function atribuirPendencia(tx: DBOrTx, ctx: Ctx, id: string, d: { responsavelId: string | null; prazo: string | null; prioridade?: string; liberacaoExcepcional?: string | null; proximaAcao?: string | null; aguardandoTerceiro?: string | null }) {
   exigir(ctx, "pendencia.resolver");
   const [p] = await tx.select().from(pendencia).where(and(eq(pendencia.id, id), eq(pendencia.empresaId, ctx.empresaId)));
   if (!p) throw new ErroAcesso();
   if (d.liberacaoExcepcional && !ctx.papeis.includes("gestor")) throw new ErroAcesso("Liberação excepcional é exclusiva do gestor.");
-  await tx.update(pendencia).set({ responsavelId: d.responsavelId, prazo: d.prazo, prioridade: d.prioridade ?? p.prioridade, situacao: "em_andamento", liberacaoExcepcional: d.liberacaoExcepcional ?? p.liberacaoExcepcional }).where(eq(pendencia.id, id));
+  await tx.update(pendencia).set({ responsavelId: d.responsavelId, prazo: d.prazo, prioridade: d.prioridade ?? p.prioridade, situacao: "em_andamento", liberacaoExcepcional: d.liberacaoExcepcional ?? p.liberacaoExcepcional, proximaAcao: d.proximaAcao ?? p.proximaAcao, aguardandoTerceiro: d.aguardandoTerceiro === undefined ? p.aguardandoTerceiro : d.aguardandoTerceiro }).where(eq(pendencia.id, id));
   await auditar(tx, ctx, { acao: d.liberacaoExcepcional ? "pendencia.liberacao_excepcional" : "pendencia.atribuida", entidadeTipo: "pendencia", entidadeId: id, motivo: d.liberacaoExcepcional, antes: p, depois: d });
 }
 
@@ -97,4 +97,22 @@ export async function encerrarPendenciasEntidade(tx: DBOrTx, ctx: Pick<Ctx, "usu
   const ps = await tx.update(pendencia).set({ situacao: "resolvida", resolucao, resolvidaPor: ctx.usuarioId, resolvidaEm: new Date() })
     .where(and(eq(pendencia.empresaId, ctx.empresaId), eq(pendencia.entidadeTipo, entidadeTipo), eq(pendencia.entidadeId, entidadeId), inArray(pendencia.situacao, ["aberta", "em_andamento"]))).returning({ id: pendencia.id });
   for (const p of ps) await encerrarNotificacoes(tx, ctx.empresaId, `pendencia:${p.id}`);
+}
+
+export type GrupoCentral = "criticas_vencidas" | "hoje" | "semana" | "aguardando_terceiro" | "sem_prazo";
+/** Central de pendências: uma linha por problema (pendências agrupadas por chave), organizada por urgência. */
+export async function centralPendencias(dbx: DBOrTx, ctx: Ctx) {
+  const { rows } = await listarPendencias(dbx, ctx, { situacao: "abertas", limite: 300 });
+  const hoje = hojeSP();
+  const fimSemana = somarDias(inicioSemana(hoje), 6);
+  const grupos: Record<GrupoCentral, typeof rows> = { criticas_vencidas: [], hoje: [], semana: [], aguardando_terceiro: [], sem_prazo: [] };
+  for (const r of rows) {
+    const p = r.p;
+    if (p.aguardandoTerceiro) grupos.aguardando_terceiro.push(r);
+    else if (p.prioridade === "critica" || (p.prazo && p.prazo < hoje)) grupos.criticas_vencidas.push(r);
+    else if (p.prazo === hoje) grupos.hoje.push(r);
+    else if (p.prazo && p.prazo <= fimSemana) grupos.semana.push(r);
+    else grupos.sem_prazo.push(r);
+  }
+  return grupos;
 }

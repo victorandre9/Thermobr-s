@@ -53,6 +53,7 @@ export const PERMISSOES = {
   "financeiro.baixa.registrar": "Registrar recebimentos/pagamentos para conferência",
   "financeiro.baixa.confirmar": "Confirmar recebimentos e pagamentos já aprovados",
   "financeiro.aprovar": "Aprovar despesas e obrigações, conferir baixas",
+  "financeiro.baixa.excecao": "Registrar pagamento já realizado sem aprovação prévia (com comprovante; gera exceção para revisão)",
   "financeiro.estornar": "Autorizar estornos e cancelamentos",
   "financeiro.desconto": "Autorizar descontos",
   "financeiro.saldo_inicial": "Cadastrar/alterar saldo inicial das contas",

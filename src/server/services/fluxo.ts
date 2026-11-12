@@ -63,30 +63,39 @@ export async function projecao(dbx: DBOrTx, ctx: Ctx, horizonteDias: number) {
   const fim = somarDias(hoje, horizonteDias);
   const saldos = await saldosRealizados(dbx, ctx, hoje);
   const restr = pode(ctx, "financeiro.restrito.ver") ? sql`true` : sql`${qc(categoriaFinanceira.restrita)} = false`;
-  const abertas = await dbx.select({ natureza: obrigacao.natureza, vencimento: parcela.vencimento, saldo: sql<string>`${saldoParcelaSQL}`, descricao: obrigacao.descricao, obrigacaoId: obrigacao.id, aprovacao: obrigacao.situacaoAprovacao })
+  const abertas = await dbx.select({ natureza: obrigacao.natureza, vencimento: parcela.vencimento, dataEsperada: parcela.dataEsperada, saldo: sql<string>`${saldoParcelaSQL}`, descricao: obrigacao.descricao, obrigacaoId: obrigacao.id, aprovacao: obrigacao.situacaoAprovacao })
     .from(parcela).innerJoin(obrigacao, eq(obrigacao.id, parcela.obrigacaoId)).innerJoin(categoriaFinanceira, eq(categoriaFinanceira.id, obrigacao.categoriaId))
-    .where(and(eq(obrigacao.empresaId, ctx.empresaId), eq(parcela.cancelada, false), sql`${qc(obrigacao.situacaoAprovacao)} in ('aprovada','aguardando_aprovacao')`, sql`${saldoParcelaSQL} > 0`, sql`${qc(parcela.vencimento)} <= ${fim}`, restr));
-  const ls = abertas.map((a) => ({ ...a, saldo: Number(a.saldo) }));
+    .where(and(eq(obrigacao.empresaId, ctx.empresaId), eq(parcela.cancelada, false), sql`${qc(obrigacao.situacaoAprovacao)} in ('aprovada','aguardando_aprovacao')`, sql`${saldoParcelaSQL} > 0`, sql`(${qc(parcela.vencimento)} <= ${fim} or ${qc(parcela.dataEsperada)} <= ${fim})`, restr));
+  // Data considerada na série: a pagar = vencimento (vencidos contam hoje); a receber = data esperada (se houver) senão vencimento.
+  // Receber vencido sem data esperada futura NÃO entra como entrada garantida: fica em "vencidos sem previsão".
+  const ls = abertas.map((a) => {
+    let data: string | null;
+    if (a.natureza === "pagar") data = a.vencimento < hoje ? hoje : a.vencimento;
+    else if (a.dataEsperada && a.dataEsperada >= hoje) data = a.dataEsperada;
+    else if (a.vencimento >= hoje && !a.dataEsperada) data = a.vencimento;
+    else data = null; // vencido sem previsão (ou previsão vencida)
+    return { ...a, saldo: Number(a.saldo), data: data && data <= fim ? data : null, semPrevisao: a.natureza === "receber" && data === null };
+  });
   const aprov = ls.filter((l) => l.aprovacao === "aprovada");
-  const receberVencido = aprov.filter((l) => l.natureza === "receber" && l.vencimento < hoje).reduce((s, l) => s + l.saldo, 0);
+  const receberVencido = aprov.filter((l) => l.semPrevisao).reduce((s, l) => s + l.saldo, 0);
+  const receberVencidoComPrevisao = aprov.filter((l) => l.natureza === "receber" && l.vencimento < hoje && l.data).reduce((s, l) => s + l.saldo, 0);
   const pagarVencido = aprov.filter((l) => l.natureza === "pagar" && l.vencimento < hoje).reduce((s, l) => s + l.saldo, 0);
-  const receberPrevisto = aprov.filter((l) => l.natureza === "receber" && l.vencimento >= hoje).reduce((s, l) => s + l.saldo, 0);
-  const pagarPrevisto = aprov.filter((l) => l.natureza === "pagar" && l.vencimento >= hoje).reduce((s, l) => s + l.saldo, 0);
+  const receberPrevisto = aprov.filter((l) => l.natureza === "receber" && l.data).reduce((s, l) => s + l.saldo, 0);
+  const pagarPrevisto = aprov.filter((l) => l.natureza === "pagar" && l.vencimento >= hoje && l.data).reduce((s, l) => s + l.saldo, 0);
   const pagarAguardandoAprovacao = ls.filter((l) => l.natureza === "pagar" && l.aprovacao === "aguardando_aprovacao").reduce((s, l) => s + l.saldo, 0);
-  // Série diária: vencidos a pagar contam hoje (obrigação já exigível); vencidos a receber NÃO entram (incerteza), exibidos à parte.
   const serie: DiaProjecao[] = [];
   let saldo = saldos.consolidado ?? 0;
   let primeiroNegativo: DiaProjecao | null = null;
   for (let i = 0; i <= horizonteDias; i++) {
     const dia = somarDias(hoje, i);
-    const ent = aprov.filter((l) => l.natureza === "receber" && l.vencimento === dia).reduce((s, l) => s + l.saldo, 0);
-    const sai = aprov.filter((l) => l.natureza === "pagar" && (l.vencimento === dia || (i === 0 && l.vencimento < hoje))).reduce((s, l) => s + l.saldo, 0);
+    const ent = aprov.filter((l) => l.natureza === "receber" && l.data === dia).reduce((s, l) => s + l.saldo, 0);
+    const sai = aprov.filter((l) => l.natureza === "pagar" && l.data === dia).reduce((s, l) => s + l.saldo, 0);
     saldo += ent - sai;
     const d = { dia, entradas: ent, saidas: sai, saldo };
     serie.push(d);
     if (!primeiroNegativo && saldo < 0) primeiroNegativo = d;
   }
-  const compromissosNoDia = primeiroNegativo ? aprov.filter((l) => l.natureza === "pagar" && (l.vencimento === primeiroNegativo!.dia || (primeiroNegativo!.dia === hoje && l.vencimento < hoje))) : [];
+  const compromissosNoDia = primeiroNegativo ? aprov.filter((l) => l.natureza === "pagar" && l.data === primeiroNegativo!.dia) : [];
   const avisos: string[] = [];
   if (saldos.contas.length === 0) avisos.push("Nenhuma conta financeira cadastrada: não há base para saldo.");
   else if (saldos.incompleto) avisos.push(`Saldo inicial não informado para: ${saldos.contas.filter((c) => c.saldo === null).map((c) => c.nome).join(", ")}. A projeção está incompleta.`);
@@ -95,12 +104,14 @@ export async function projecao(dbx: DBOrTx, ctx: Ctx, horizonteDias: number) {
   if (pagarAguardandoAprovacao) avisos.push("Há pagamentos aguardando aprovação que não entram na projeção principal.");
   return {
     dataCorte: hoje, horizonteDias, fim, saldoConfirmado: saldos.consolidado, incompleta: saldos.incompleto || saldos.contas.length === 0,
-    receberPrevisto, pagarPrevisto, receberVencido, pagarVencido, pagarAguardandoAprovacao,
+    receberPrevisto, pagarPrevisto, receberVencido, receberVencidoComPrevisao, pagarVencido, pagarAguardandoAprovacao,
+    vencidosSemPrevisao: aprov.filter((l) => l.semPrevisao).map((l) => ({ descricao: l.descricao, vencimento: l.vencimento, saldo: l.saldo, obrigacaoId: l.obrigacaoId })),
     saldoProjetado: saldos.consolidado === null ? null : saldo, serie, primeiroNegativo, compromissosNoDia, avisos,
     premissas: [
       "Saldo de partida = saldo inicial por conta + baixas confirmadas até a data de corte.",
-      "Entradas e saídas previstas = parcelas aprovadas em aberto (valor − recebido/pago confirmado).",
-      "Recebimentos vencidos não entram na série (podem não ocorrer); pagamentos vencidos entram na data de corte.",
+      "Entradas e saídas previstas = parcelas aprovadas em aberto (valor − recebido/pago confirmado), cada uma contada uma única vez.",
+      "Recebimentos usam a data esperada combinada na cobrança; sem ela, o vencimento (se futuro).",
+      "Recebimentos vencidos sem data esperada não entram na série (não são entrada garantida) e aparecem à parte; pagamentos vencidos entram na data de corte.",
       "Baixas aguardando conferência não alteram o saldo realizado.",
       "Transferências entre contas não alteram o consolidado.",
     ],

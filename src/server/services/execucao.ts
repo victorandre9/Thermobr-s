@@ -4,10 +4,10 @@ import { qc } from "../db/sql";
 import type { DBOrTx } from "../db";
 import {
   agendaReserva, anexo, checklistResposta, cliente, clienteContato, clienteLocal, equipamento, ordemServico, osEquipamento, osItem, pendencia,
-  profissional, visita, visitaExecucao,
+  profissional, visita, visitaExecucao, visitaParticipacao,
 } from "../db/schema";
-import type { Ctx } from "../auth/contexto";
-import { ErroNegocio } from "../erros";
+import { type Ctx, pode } from "../auth/contexto";
+import { ErroAcesso, ErroNegocio } from "../erros";
 import { auditar } from "./auditoria";
 import { exigirAcessoVisita } from "./escopo";
 import { recalcularEtapa, tocarOS } from "./os";
@@ -35,11 +35,40 @@ export async function obterVisitaTecnico(dbx: DBOrTx, ctx: Ctx, visitaId: string
     .from(anexo).where(and(eq(anexo.empresaId, ctx.empresaId), sql`(${qc(anexo.entidadeTipo)} = 'visita' and ${qc(anexo.entidadeId)} = ${visitaId}) or (${qc(anexo.entidadeTipo)} = 'visita_execucao' and ${qc(anexo.entidadeId)} in (select id from ${visitaExecucao} where visita_id = ${visitaId}))`));
   const historico = await dbx.select({ id: visita.id, sequencia: visita.sequencia, situacao: visita.situacao, resultado: visita.resultado, motivo: visita.motivoResultado, pendencia: visita.pendenciaDescricao, checkoutEm: visita.checkoutEm })
     .from(visita).where(and(eq(visita.osId, o.id), sql`${qc(visita.id)} <> ${visitaId}`)).orderBy(asc(visita.sequencia));
-  return { visita: v, os: o, cliente: cli, local, contato, equipamentos, itens, execucoes, equipe, fotos, historico };
+  const participacoes = await dbx.select().from(visitaParticipacao).where(eq(visitaParticipacao.visitaId, visitaId));
+  const meuPapel = equipe.find((e) => e.id === ctx.profissional?.id)?.papel ?? null;
+  return { visita: v, os: o, cliente: cli, local, contato, equipamentos, itens, execucoes, equipe, fotos, historico, participacoes, meuPapel, podeConduzir: meuPapel === "responsavel" || pode(ctx, "visita.executar", "empresa") };
+}
+
+/** Somente o responsável da visita (ou perfil com escopo empresa) inicia e encerra; os demais registram participação própria. */
+async function exigirResponsavel(tx: DBOrTx, ctx: Ctx, visitaId: string) {
+  if (pode(ctx, "visita.executar", "empresa")) return;
+  const [r] = await tx.select({ papel: agendaReserva.papelNaVisita }).from(agendaReserva).where(and(eq(agendaReserva.visitaId, visitaId), eq(agendaReserva.profissionalId, ctx.profissional?.id ?? "00000000-0000-0000-0000-000000000000"), eq(agendaReserva.ativo, true)));
+  if (r?.papel !== "responsavel") throw new ErroAcesso("Somente o responsável pela visita inicia e encerra o atendimento. Registre a sua participação (chegada/saída).");
+}
+
+export async function registrarParticipacao(tx: DBOrTx, ctx: Ctx, visitaId: string, tipo: "chegada" | "saida", observacao?: string | null) {
+  await exigirAcessoVisita(tx, ctx, visitaId, "visita.executar");
+  if (!ctx.profissional) throw new ErroAcesso();
+  const [v] = await tx.select().from(visita).where(eq(visita.id, visitaId));
+  if (!["em_atendimento", "finalizada"].includes(v.situacao) && tipo === "saida") throw new ErroNegocio("Visita não iniciada.");
+  const agora = sql`now()`;
+  const [ex] = await tx.select().from(visitaParticipacao).where(and(eq(visitaParticipacao.visitaId, visitaId), eq(visitaParticipacao.profissionalId, ctx.profissional.id)));
+  if (tipo === "chegada") {
+    if (ex?.chegadaEm) return ex; // repetido
+    if (ex) await tx.update(visitaParticipacao).set({ chegadaEm: agora as unknown as Date, observacao: observacao ?? ex.observacao }).where(eq(visitaParticipacao.id, ex.id));
+    else await tx.insert(visitaParticipacao).values({ visitaId, profissionalId: ctx.profissional.id, chegadaEm: agora as unknown as Date, observacao: observacao ?? null, registradoPor: ctx.usuarioId });
+  } else {
+    if (!ex?.chegadaEm) throw new ErroNegocio("Registre a chegada antes da saída.");
+    if (ex.saidaEm) return ex;
+    await tx.update(visitaParticipacao).set({ saidaEm: agora as unknown as Date, observacao: observacao ?? ex.observacao }).where(eq(visitaParticipacao.id, ex.id));
+  }
+  await auditar(tx, ctx, { acao: `visita.participacao_${tipo}`, entidadeTipo: "visita", entidadeId: visitaId });
 }
 
 export async function checkin(tx: DBOrTx, ctx: Ctx, visitaId: string) {
   await exigirAcessoVisita(tx, ctx, visitaId, "visita.executar");
+  await exigirResponsavel(tx, ctx, visitaId);
   const avisos: string[] = [];
   const prof = ctx.profissional;
   // Técnico da equipe própria: checklist do veículo designado (nunca para autônomo).
@@ -50,7 +79,7 @@ export async function checkin(tx: DBOrTx, ctx: Ctx, visitaId: string) {
       avisos.push("Você não tem veículo designado. O escritório foi avisado.");
     } else {
       const [valido] = await tx.select({ id: checklistResposta.id }).from(checklistResposta)
-        .where(and(eq(checklistResposta.veiculoId, prof.veiculoId), eq(checklistResposta.tipo, "veiculo_saida"), sql`${qc(checklistResposta.validoAte)} > now()`)).limit(1);
+        .where(and(eq(checklistResposta.veiculoId, prof.veiculoId), eq(checklistResposta.tipo, "veiculo_saida"), eq(checklistResposta.profissionalId, prof.id), sql`${qc(checklistResposta.validoAte)} > now()`)).limit(1);
       if (!valido && cfg.veiculos.checklistSaidaObrigatorio) avisos.push("Checklist de saída do veículo pendente para este turno.");
       if (cfg.veiculos.bloquearComIrregularidadeCritica) {
         const [crit] = await tx.select({ id: pendencia.id, titulo: pendencia.titulo }).from(pendencia)
@@ -66,6 +95,7 @@ export async function checkin(tx: DBOrTx, ctx: Ctx, visitaId: string) {
     if (atual.situacao === "em_atendimento") return { visita: atual, avisos, repetido: true }; // toque repetido: sem duplicar
     throw new ErroNegocio(`Check-in indisponível: visita ${atual.situacao === "nao_agendada" ? "ainda não agendada" : atual.situacao}.`);
   }
+  if (ctx.profissional) await tx.insert(visitaParticipacao).values({ visitaId, profissionalId: ctx.profissional.id, chegadaEm: v.checkinEm, registradoPor: ctx.usuarioId }).onConflictDoNothing();
   await auditar(tx, ctx, { acao: "visita.checkin", entidadeTipo: "visita", entidadeId: visitaId, depois: { em: v.checkinEm, osId: v.osId } });
   await recalcularEtapa(tx, v.osId);
   return { visita: v, avisos, repetido: false };
@@ -95,6 +125,7 @@ export interface DadosCheckout {
 
 export async function checkout(tx: DBOrTx, ctx: Ctx, visitaId: string, d: DadosCheckout) {
   await exigirAcessoVisita(tx, ctx, visitaId, "visita.executar");
+  await exigirResponsavel(tx, ctx, visitaId);
   const [v0] = await tx.select().from(visita).where(eq(visita.id, visitaId)).for("update");
   if (v0.situacao === "finalizada") return { visita: v0, repetido: true };
   if (v0.situacao !== "em_atendimento") throw new ErroNegocio("Faça o check-in antes de finalizar.");
@@ -119,6 +150,8 @@ export async function checkout(tx: DBOrTx, ctx: Ctx, visitaId: string, d: DadosC
     checkoutEm: sql`now()`, checkoutPor: ctx.usuarioId,
   }).where(and(eq(visita.id, visitaId), eq(visita.situacao, "em_atendimento"))).returning();
   if (!v) { const [a] = await tx.select().from(visita).where(eq(visita.id, visitaId)); return { visita: a, repetido: true }; }
+  // saída registrada apenas para quem encerrou; demais integrantes registram a própria (sem atribuir tempo automaticamente)
+  if (ctx.profissional) await tx.update(visitaParticipacao).set({ saidaEm: v.checkoutEm }).where(and(eq(visitaParticipacao.visitaId, visitaId), eq(visitaParticipacao.profissionalId, ctx.profissional.id), sql`${visitaParticipacao.saidaEm} is null`));
   if (d.resultado !== "concluida") {
     await garantirPendencia(tx, ctx, {
       tipo: "visita_impedimento", titulo: `Visita ${d.resultado === "parcial" ? "parcial" : "não realizada"}: ${MOTIVOS_RESULTADO[d.motivo as keyof typeof MOTIVOS_RESULTADO]}`,

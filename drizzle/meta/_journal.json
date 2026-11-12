@@ -22,6 +22,20 @@
       "when": 1794513773182,
       "tag": "0002_contagem",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794515102685,
+      "tag": "0003_aditivo",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794515110235,
+      "tag": "0004_aditivo_constraints",
+      "breakpoints": true
     }
   ]
 }

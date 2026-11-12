@@ -71,6 +71,8 @@ export interface NovaObrigacao {
   parcelas: Array<{ vencimento: string; valorCentavos: number; descricao?: string | null }>;
   /** Origem já aprovada (OS aprovada, contrato ativo, resumo liberado pelo gestor) — não exige nova aprovação. */
   origemAprovada?: boolean; demo?: boolean;
+  /** Obrigação anterior à data de corte (implantação). */
+  legado?: boolean;
 }
 
 export async function criarObrigacao(tx: DBOrTx, ctx: Ctx, d: NovaObrigacao, opts: { permissaoAlternativa?: Permissao } = {}) {
@@ -101,7 +103,7 @@ export async function criarObrigacao(tx: DBOrTx, ctx: Ctx, d: NovaObrigacao, opt
         beneficiarioNome: d.beneficiarioNome ?? null, descricao: d.descricao.trim(), competencia: d.competencia ?? null, valorBrutoCentavos: d.valorBrutoCentavos, descontoCentavos: desconto,
         descontoAutorizadoPor: desconto ? ctx.usuarioId : null, origemTipo: d.origemTipo, origemId: d.origemId ?? null, osId: d.osId ?? null, veiculoId: d.veiculoId ?? null,
         chaveUnicidade: d.chaveUnicidade ?? null, situacaoAprovacao: autoAprovar ? "aprovada" : "aguardando_aprovacao", contaPrevistaId: d.contaPrevistaId ?? null,
-        documento: d.documento ?? null, notaFiscalRef: d.notaFiscalRef ?? null, criadoPor: ctx.usuarioId, demo: d.demo ?? false,
+        documento: d.documento ?? null, notaFiscalRef: d.notaFiscalRef ?? null, criadoPor: ctx.usuarioId, demo: d.demo ?? false, legado: d.legado ?? false,
       }).returning();
       await sp.insert(parcela).values(d.parcelas.map((p, i) => ({ obrigacaoId: o.id, numero: i + 1, vencimento: p.vencimento, valorCentavos: p.valorCentavos, descricao: p.descricao ?? (d.parcelas.length > 1 ? `${i + 1}/${d.parcelas.length}` : null) })));
       return o;
@@ -161,7 +163,7 @@ export async function cancelarObrigacao(tx: DBOrTx, ctx: Ctx, obrigacaoId: strin
   if (ob.situacaoAprovacao === "aprovada") exigir(ctx, "financeiro.estornar"); else exigir(ctx, "financeiro.lancar");
   if (ob.situacaoAprovacao === "cancelada") return;
   const [{ liq }] = await tx.select({ liq: sql<number>`coalesce(sum(${qc(baixa.valorCentavos)}) filter (where ${qc(baixa.status)} = 'confirmada'),0)::bigint` }).from(baixa).innerJoin(parcela, eq(parcela.id, baixa.parcelaId)).where(eq(parcela.obrigacaoId, ob.id));
-  if (Number(liq) !== 0) throw new ErroNegocio("Há baixas confirmadas. Estorne-as antes de cancelar.");
+  if (Number(liq) !== 0) throw new ErroNegocio("Há recebimentos/pagamentos confirmados. Para cancelar a venda, registre antes o estorno/devolução de cada baixa (o histórico é preservado).");
   const [{ pend }] = await tx.select({ pend: sql<number>`count(*)::int` }).from(baixa).innerJoin(parcela, eq(parcela.id, baixa.parcelaId)).where(and(eq(parcela.obrigacaoId, ob.id), eq(baixa.status, "aguardando_conferencia")));
   if (pend > 0) throw new ErroNegocio("Há baixas aguardando conferência. Rejeite-as antes de cancelar.");
   await tx.update(obrigacao).set({ situacaoAprovacao: "cancelada", canceladaPor: ctx.usuarioId, canceladaMotivo: motivo }).where(eq(obrigacao.id, ob.id));
@@ -199,7 +201,9 @@ function podeConfirmarBaixa(ctx: Ctx, natureza: string, obAprovada: boolean) {
 }
 
 /** Registra recebimento/pagamento efetivamente realizado. Parcial permitido; nunca acima do saldo da parcela. */
-export async function registrarBaixa(tx: DBOrTx, ctx: Ctx, d: { parcelaId: string; contaId: string; valorCentavos: number; dataPagamento: string; forma?: string | null; motivo?: string | null; chave?: string | null }) {
+export async function registrarBaixa(tx: DBOrTx, ctx: Ctx, d: { parcelaId: string; contaId: string; valorCentavos: number; dataPagamento: string; forma?: string | null; motivo?: string | null; chave?: string | null;
+  /** Pagamento que já aconteceu sem aprovação prévia: exige permissão específica, justificativa e comprovante anexado. */
+  excecao?: { justificativa: string; comprovanteAnexado: boolean } | null }) {
   exigir(ctx, "financeiro.baixa.registrar");
   if (d.chave) {
     const [ex] = await tx.select().from(baixa).where(eq(baixa.chaveIdempotencia, d.chave));
@@ -207,22 +211,31 @@ export async function registrarBaixa(tx: DBOrTx, ctx: Ctx, d: { parcelaId: strin
   }
   const { p, ob } = await lerParcelaParaBaixa(tx, ctx, d.parcelaId);
   if (p.cancelada || ob.situacaoAprovacao === "cancelada") throw new ErroNegocio("Parcela cancelada.");
-  if (ob.situacaoAprovacao !== "aprovada") throw new ErroNegocio(ob.natureza === "pagar" ? "Pagamento ainda não aprovado pelo gestor." : "Conta a receber ainda não aprovada.");
+  const excecao = ob.natureza === "pagar" && ob.situacaoAprovacao === "aguardando_aprovacao" && !!d.excecao;
+  if (excecao) {
+    exigir(ctx, "financeiro.baixa.excecao");
+    if (!d.excecao!.justificativa?.trim()) throw new ErroNegocio("Justifique por que o pagamento ocorreu sem aprovação prévia.");
+    if (!d.excecao!.comprovanteAnexado) throw new ErroNegocio("Anexe o comprovante do pagamento realizado.");
+    if ((await beneficiarioEhUsuario(tx, ob, ctx.usuarioId)) && !ctx.papeis.includes("gestor")) throw new ErroAcesso("Você não pode registrar exceção de pagamento a si mesmo.");
+  } else if (ob.situacaoAprovacao !== "aprovada") throw new ErroNegocio(ob.natureza === "pagar" ? "Pagamento ainda não aprovado pelo gestor. Se ele já foi efetivamente realizado, registre como exceção (com comprovante)." : "Conta a receber ainda não aprovada.");
   const [conta] = await tx.select().from(contaFinanceira).where(and(eq(contaFinanceira.id, d.contaId), eq(contaFinanceira.empresaId, ctx.empresaId), eq(contaFinanceira.ativo, true)));
   if (!conta) throw new ErroNegocio("Conta financeira inválida.");
   if (!Number.isInteger(d.valorCentavos) || d.valorCentavos <= 0) throw new ErroNegocio("Valor deve ser maior que zero.");
+  if (conta.saldoInicialData && d.dataPagamento < conta.saldoInicialData) throw new ErroNegocio(`Data anterior ao saldo inicial da conta (${conta.saldoInicialData.split("-").reverse().join("/")}): esse valor já está no saldo inicial e não pode ser somado de novo.`);
   const c = await comprometidoParcela(tx, p.id);
   const restante = p.valorCentavos - c.confirmado - c.aguardando;
   if (d.valorCentavos > restante) throw new ErroNegocio(`Valor acima do saldo da parcela (restante: R$ ${(restante / 100).toFixed(2).replace(".", ",")}${c.aguardando ? ", considerando baixas aguardando conferência" : ""}).`);
-  const confirmarDireto = podeConfirmarBaixa(ctx, ob.natureza, true) && !(ob.natureza === "pagar" && (await beneficiarioEhUsuario(tx, ob, ctx.usuarioId)) && !ctx.papeis.includes("gestor"));
+  // Exceção: o dinheiro já saiu — entra no realizado (não esconder saída real), marcada para revisão do gestor.
+  const confirmarDireto = excecao || (podeConfirmarBaixa(ctx, ob.natureza, true) && !(ob.natureza === "pagar" && (await beneficiarioEhUsuario(tx, ob, ctx.usuarioId)) && !ctx.papeis.includes("gestor")));
   let b;
   try {
     [b] = await tx.transaction(async (sp) => sp.insert(baixa).values({
-      empresaId: ctx.empresaId, parcelaId: p.id, contaId: conta.id, valorCentavos: d.valorCentavos, dataPagamento: d.dataPagamento, forma: d.forma ?? null, motivo: d.motivo ?? null,
+      empresaId: ctx.empresaId, parcelaId: p.id, contaId: conta.id, valorCentavos: d.valorCentavos, dataPagamento: d.dataPagamento, forma: d.forma ?? null,
       status: confirmarDireto ? "confirmada" : "aguardando_conferencia", registradaPor: ctx.usuarioId,
-      confirmadaPor: confirmarDireto ? ctx.usuarioId : null, confirmadaEm: confirmarDireto ? new Date() : null, autoconfirmacao: confirmarDireto, chaveIdempotencia: d.chave ?? null,
+      confirmadaPor: confirmarDireto ? ctx.usuarioId : null, confirmadaEm: confirmarDireto ? new Date() : null, autoconfirmacao: confirmarDireto, excecaoSemAprovacao: excecao, motivo: excecao ? d.excecao!.justificativa : d.motivo ?? null, chaveIdempotencia: d.chave ?? null,
     }).returning());
   } catch (e) { throw traduzirErroBanco(e); }
+  if (excecao) await notificarPorPermissao(tx, ctx.empresaId, "financeiro.aprovar", { tipo: "pagamento_excecao", chave: `pagamento_excecao:${ob.id}`, titulo: "Pagamento realizado sem aprovação prévia — revisar", link: `/financeiro/obrigacoes/${ob.id}`, prioridade: "alta" });
   if (!confirmarDireto) await notificarPorPermissao(tx, ctx.empresaId, "financeiro.aprovar", { tipo: "baixa_conferencia", chave: "baixas_aguardando_conferencia", titulo: "Baixas aguardando conferência", link: "/financeiro/aprovacoes", prioridade: "media" });
   await auditar(tx, ctx, { acao: confirmarDireto ? "financeiro.baixa_registrada_confirmada" : "financeiro.baixa_registrada", entidadeTipo: "baixa", entidadeId: b.id, depois: { parcelaId: p.id, valor: d.valorCentavos, data: d.dataPagamento, autoconfirmacao: confirmarDireto } });
   return { baixa: b, repetido: false };
@@ -452,9 +465,9 @@ export async function clientesEmAtraso(dbx: DBOrTx, ctx: Ctx) {
   return dbx.select({
     clienteId: cliente.id, clienteNome: cliente.nome, telefone: cliente.telefone,
     totalVencido: sql<string>`sum(${saldoParcelaSQL})`, parcelas: sql<number>`count(*)::int`, maisAntigo: sql<string>`min(${qc(parcela.vencimento)})`,
-    ultimoContato: sql<string | null>`(select max(cc.em) from ${cobrancaContato} cc where cc.cliente_id = ${qc(cliente.id)})`,
-    proximaAcaoEm: sql<string | null>`(select cc.proxima_acao_em from ${cobrancaContato} cc where cc.cliente_id = ${qc(cliente.id)} order by cc.em desc limit 1)`,
-    proximaAcao: sql<string | null>`(select cc.proxima_acao from ${cobrancaContato} cc where cc.cliente_id = ${qc(cliente.id)} order by cc.em desc limit 1)`,
+    ultimoContato: sql<string | null>`(select max(cc.criado_em) from ${cobrancaContato} cc where cc.cliente_id = ${qc(cliente.id)})`,
+    proximaAcaoEm: sql<string | null>`(select cc.proxima_acao_em from ${cobrancaContato} cc where cc.cliente_id = ${qc(cliente.id)} order by cc.criado_em desc limit 1)`,
+    proximaAcao: sql<string | null>`(select cc.proxima_acao from ${cobrancaContato} cc where cc.cliente_id = ${qc(cliente.id)} order by cc.criado_em desc limit 1)`,
   }).from(parcela).innerJoin(obrigacao, eq(obrigacao.id, parcela.obrigacaoId)).innerJoin(cliente, eq(cliente.id, obrigacao.clienteId))
     .where(and(eq(obrigacao.empresaId, ctx.empresaId), eq(obrigacao.natureza, "receber"), eq(parcela.cancelada, false), eq(obrigacao.situacaoAprovacao, "aprovada"), sql`${qc(parcela.vencimento)} < ${hoje}`, sql`${saldoParcelaSQL} > 0`))
     .groupBy(cliente.id).orderBy(sql`min(${qc(parcela.vencimento)})`);
@@ -464,4 +477,20 @@ export async function historicoCobranca(dbx: DBOrTx, ctx: Ctx, clienteId: string
   exigir(ctx, "financeiro.ver");
   return dbx.select({ c: cobrancaContato, nome: usuario.nome }).from(cobrancaContato).innerJoin(usuario, eq(usuario.id, cobrancaContato.responsavelId))
     .where(and(eq(cobrancaContato.empresaId, ctx.empresaId), eq(cobrancaContato.clienteId, clienteId))).orderBy(desc(cobrancaContato.em));
+}
+
+/** Data esperada de recebimento/pagamento (acordada na cobrança). Não altera o vencimento contratual. */
+export async function definirDataEsperada(tx: DBOrTx, ctx: Ctx, parcelaId: string, data: string | null, motivo?: string | null) {
+  if (!pode(ctx, "financeiro.cobranca") && !pode(ctx, "financeiro.lancar")) throw new ErroAcesso();
+  const [r] = await tx.select({ p: parcela, emp: obrigacao.empresaId }).from(parcela).innerJoin(obrigacao, eq(obrigacao.id, parcela.obrigacaoId)).where(eq(parcela.id, parcelaId));
+  if (!r || r.emp !== ctx.empresaId) throw new ErroAcesso();
+  await tx.update(parcela).set({ dataEsperada: data }).where(eq(parcela.id, parcelaId));
+  await auditar(tx, ctx, { acao: "financeiro.data_esperada", entidadeTipo: "parcela", entidadeId: parcelaId, motivo, antes: { dataEsperada: r.p.dataEsperada }, depois: { dataEsperada: data } });
+}
+
+/** Ao revisar a exceção, o gestor aprova (ou rejeita) a obrigação; o pagamento já registrado permanece no histórico. */
+export async function excecoesPendentes(dbx: DBOrTx, ctx: Ctx) {
+  exigir(ctx, "financeiro.aprovar");
+  return dbx.select({ b: baixa, descricao: obrigacao.descricao, obrigacaoId: obrigacao.id, registradaPorNome: usuario.nome }).from(baixa).innerJoin(parcela, eq(parcela.id, baixa.parcelaId)).innerJoin(obrigacao, eq(obrigacao.id, parcela.obrigacaoId)).innerJoin(usuario, eq(usuario.id, baixa.registradaPor))
+    .where(and(eq(baixa.empresaId, ctx.empresaId), eq(baixa.excecaoSemAprovacao, true), eq(obrigacao.situacaoAprovacao, "aguardando_aprovacao")));
 }

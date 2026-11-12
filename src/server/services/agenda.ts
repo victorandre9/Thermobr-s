@@ -1,7 +1,7 @@
 import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { qc } from "../db/sql";
 import type { DBOrTx } from "../db";
-import { agendaReserva, agendaVaga, cliente, clienteLocal, ordemServico, pendencia, profissional, visita, visitaReagendamento, autonomoServico } from "../db/schema";
+import { recursoReserva, veiculo, ferramenta, agendaReserva, agendaVaga, cliente, clienteLocal, ordemServico, pendencia, profissional, visita, visitaReagendamento, autonomoServico } from "../db/schema";
 import { type Ctx, exigir, pode } from "../auth/contexto";
 import { ErroAcesso, ErroNegocio, traduzirErroBanco } from "../erros";
 import { auditar } from "./auditoria";
@@ -11,7 +11,7 @@ import { garantirPendencia } from "./pendencias";
 
 const rng = (ini: Date, fim: Date) => `[${ini.toISOString()},${fim.toISOString()})`;
 
-export interface EquipeVisita { profissionalIds: string[]; responsavelId?: string | null }
+export interface EquipeVisita { profissionalIds: string[]; responsavelId?: string | null; /** Recursos exclusivos reservados junto (veículo e/ou ferramentas exclusivas). */ veiculoId?: string | null; ferramentaIds?: string[] }
 
 /** Cria nova visita na OS (opcionalmente já agendada com equipe). */
 export async function criarVisita(tx: DBOrTx, ctx: Ctx, osId: string, d: { tipo?: string; instrucoes?: string | null; inicio?: Date | null; fim?: Date | null; equipe?: EquipeVisita; veiculoId?: string | null }) {
@@ -51,17 +51,30 @@ export async function agendarVisita(tx: DBOrTx, ctx: Ctx, visitaId: string, inic
       await sp.insert(agendaReserva).values(ids.map((pid) => ({
         empresaId: ctx.empresaId, profissionalId: pid, visitaId, tipo: "visita", papelNaVisita: pid === responsavel ? "responsavel" : "auxiliar", periodo: rng(inicio, fim), criadoPor: ctx.usuarioId,
       })));
+      // recursos exclusivos: mesma transação; EXCLUDE impede conflito de veículo/ferramenta exclusiva
+      await sp.update(recursoReserva).set({ ativo: false }).where(and(eq(recursoReserva.visitaId, visitaId), eq(recursoReserva.ativo, true)));
+      const recursos: Array<typeof recursoReserva.$inferInsert> = [];
+      if (equipe.veiculoId) recursos.push({ empresaId: ctx.empresaId, visitaId, veiculoId: equipe.veiculoId, periodo: rng(inicio, fim), criadoPor: ctx.usuarioId });
+      for (const fid of equipe.ferramentaIds ?? []) recursos.push({ empresaId: ctx.empresaId, visitaId, ferramentaId: fid, periodo: rng(inicio, fim), criadoPor: ctx.usuarioId });
+      if (recursos.length) {
+        if (equipe.veiculoId) { const [vv] = await sp.select({ id: veiculo.id }).from(veiculo).where(and(eq(veiculo.id, equipe.veiculoId), eq(veiculo.empresaId, ctx.empresaId), eq(veiculo.ativo, true))); if (!vv) throw new ErroNegocio("Veículo inválido."); }
+        if (equipe.ferramentaIds?.length) { const fs = await sp.select({ id: ferramenta.id }).from(ferramenta).where(and(inArray(ferramenta.id, equipe.ferramentaIds), eq(ferramenta.empresaId, ctx.empresaId), eq(ferramenta.exclusiva, true))); if (fs.length !== new Set(equipe.ferramentaIds).size) throw new ErroNegocio("Ferramenta exclusiva inválida."); }
+        await sp.insert(recursoReserva).values(recursos);
+      }
     });
   } catch (e) {
     throw traduzirErroBanco(e);
   }
-  await tx.update(visita).set({ inicioPrevisto: inicio, fimPrevisto: fim, situacao: "agendada" }).where(eq(visita.id, visitaId));
+  await tx.update(visita).set({ inicioPrevisto: inicio, fimPrevisto: fim, situacao: "agendada", veiculoId: equipe.veiculoId ?? v.veiculoId }).where(eq(visita.id, visitaId));
   if (reagendamento || v.inicioPrevisto) {
     await tx.insert(visitaReagendamento).values({ visitaId, deInicio: v.inicioPrevisto, deFim: v.fimPrevisto, paraInicio: inicio, paraFim: fim, equipeAntes: antesEquipe, equipeDepois: ids, motivo: motivo ?? "Agendamento", por: ctx.usuarioId });
   }
   // autônomos participantes passam a ter linha de serviço (valor definido pelo gestor, nunca automático)
+  // Retorno/garantia: linha "adicional_retorno" aguardando decisão do gestor (pagar adicional ou marcar como coberto) — nunca presume gratuidade nem gera receita.
+  const [osRow] = await tx.select({ origem: ordemServico.origem }).from(ordemServico).where(eq(ordemServico.id, v.osId));
   for (const p of profs.filter((x) => x.vinculo === "autonomo")) {
-    await tx.insert(autonomoServico).values({ empresaId: ctx.empresaId, osId: v.osId, profissionalId: p.id, descricao: "Participação na OS" }).onConflictDoNothing();
+    const retorno = osRow.origem === "retorno_garantia";
+    await tx.insert(autonomoServico).values({ empresaId: ctx.empresaId, osId: v.osId, profissionalId: p.id, descricao: retorno ? "Retorno/garantia — definir adicional ou cobertura" : "Participação na OS", base: retorno ? "adicional_retorno" : "servico", chave: "principal" }).onConflictDoNothing();
   }
   // solicitações de remarcação/retorno ligadas à visita ficam atendidas
   await tx.update(pendencia).set({ situacao: "resolvida", resolvidaPor: ctx.usuarioId, resolvidaEm: new Date(), resolucao: "Visita agendada pelo escritório" })
@@ -78,6 +91,7 @@ export async function cancelarVisita(tx: DBOrTx, ctx: Ctx, visitaId: string, mot
   if (v.situacao === "em_atendimento" || v.situacao === "finalizada") throw new ErroNegocio("Visita iniciada ou finalizada não pode ser cancelada; registre o resultado.");
   await tx.update(visita).set({ situacao: "cancelada", canceladaMotivo: motivo }).where(eq(visita.id, visitaId));
   await tx.update(agendaReserva).set({ ativo: false }).where(eq(agendaReserva.visitaId, visitaId));
+  await tx.update(recursoReserva).set({ ativo: false }).where(eq(recursoReserva.visitaId, visitaId));
   await auditar(tx, ctx, { acao: "visita.cancelada", entidadeTipo: "visita", entidadeId: visitaId, motivo });
   await recalcularEtapa(tx, v.osId);
 }
