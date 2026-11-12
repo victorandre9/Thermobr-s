@@ -33,3 +33,8 @@ Ver `.env.example` (sem segredos). Na Vercel: `APP_ENV=production`, `DATABASE_UR
 - Sessões em cookie httpOnly/secure, token armazenado como hash; bloqueio após 5 tentativas em 15 min; redefinição por link de uso único (1 h) emitido pelo gestor (sem provedor de e-mail configurado).
 - Desativar usuário revoga sessões (e acesso a anexos). Histórico preservado.
 - Logs de auditoria não guardam senhas/tokens. Exportações CSV são auditadas e protegidas contra injeção de fórmula.
+
+## Deploy na Vercel (projeto `thermobras`)
+- Branch de produção: `main`. Cada push na `main` gera um deploy de produção; outras branches geram prévias.
+- O build usa `npm run vercel-build`: sem banco, só compila; com o Neon conectado (`DATABASE_URL`), aplica as migrações e, fora de `APP_ENV=production`, cria os dados de demonstração uma única vez.
+- Para a demonstração, não defina `APP_ENV=production` (a tela de escolha de usuário só aparece fora de produção).
