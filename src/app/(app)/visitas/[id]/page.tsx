@@ -31,7 +31,7 @@ export default async function Visita({ params }: { params: Promise<{ id: string 
       <div>
         <Link href={pode(ctx, "os.ver", "empresa") ? `/os/${d.os.id}` : "/"} className="text-[13px] font-medium text-ice-strong">← {pode(ctx, "os.ver", "empresa") ? `OS #${d.os.numero}` : "Minhas visitas"}</Link>
         <h1 className="mt-1 text-[22px] font-bold text-navy">{d.cliente.nome}</h1>
-        <div className="flex flex-wrap items-center gap-2 text-[13px] text-text-2">OS #{d.os.numero} · visita {v.sequencia} <SituacaoVisita s={v.situacao} r={v.resultado} /><Badge tom={pr.pronta ? "ok" : "critico"}>{pr.situacao}</Badge></div>
+        <div className="flex flex-wrap items-center gap-2 text-[13px] text-text-2">OS #{d.os.numero} · visita {v.sequencia} <SituacaoVisita s={v.situacao} r={v.resultado} />{["agendada", "nao_agendada"].includes(v.situacao) && <Badge tom={pr.pronta ? "ok" : "critico"}>{pr.situacao}</Badge>}</div>
       </div>
 
       <Card>
@@ -46,7 +46,7 @@ export default async function Visita({ params }: { params: Promise<{ id: string 
         </div>
       </Card>
 
-      <Card titulo={`Conferência antes da saída — ${pr.situacao}`} icone={ClipboardCheck}>
+      {["agendada", "nao_agendada"].includes(v.situacao) && <Card titulo={`Conferência antes da saída — ${pr.situacao}`} icone={ClipboardCheck}>
         <ul className="space-y-2">{pr.itens.map((i) => (
           <li key={i.codigo} className="flex gap-2 text-[13px]">
             <Badge tom={i.status === "ok" ? "ok" : i.status === "impeditivo" ? "critico" : i.status === "alerta" ? "atencao" : "neutro"}>{i.status === "ok" ? "OK" : i.status === "impeditivo" ? "Impede" : i.status === "alerta" ? "Alerta" : "N/A"}</Badge>
@@ -54,7 +54,7 @@ export default async function Visita({ params }: { params: Promise<{ id: string 
           </li>
         ))}</ul>
         {ctx.profissional?.vinculo === "proprio" && ctx.profissional.veiculoId && pr.itens.some((i) => i.codigo === `veiculo:${ctx.profissional!.id}` && i.status !== "ok") && <Link className="btn btn-ghost mt-3" href={`/veiculos/${ctx.profissional.veiculoId}/checklist`}>Fazer checklist do veículo</Link>}
-      </Card>
+      </Card>}
 
       {v.situacao === "agendada" && (
         d.podeConduzir

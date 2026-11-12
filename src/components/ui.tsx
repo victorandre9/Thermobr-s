@@ -62,7 +62,7 @@ const ICONES: Partial<Record<Tom, LucideIcon>> = { ok: CheckCircle2, atencao: Al
 /** Selo de situação: sempre texto + ícone (não depende só de cor). */
 export function Badge({ tom = "neutro", children, icone = true }: { tom?: Tom; children: ReactNode; icone?: boolean }) {
   const I = icone ? ICONES[tom] : undefined;
-  return <span className={cx("inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[12px] font-semibold", TONS[tom])}>{I && <I size={12} aria-hidden />}{children}</span>;
+  return <span className={cx("inline-flex h-fit shrink-0 items-center gap-1 self-start whitespace-nowrap rounded-full border px-2 py-0.5 text-[12px] font-semibold", TONS[tom])}>{I && <I size={12} aria-hidden />}{children}</span>;
 }
 
 export function Aviso({ tom = "info", titulo, children }: { tom?: Tom; titulo?: string; children: ReactNode }) {

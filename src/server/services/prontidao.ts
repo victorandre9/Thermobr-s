@@ -36,7 +36,7 @@ export async function prontidaoVisita(dbx: DBOrTx, ctx: Ctx, visitaId: string) {
   };
   const escritorio = "Escritório (agenda)";
 
-  add({ codigo: "agendamento", rotulo: "Data e horário", status: v.situacao === "agendada" || v.situacao === "em_atendimento" ? "ok" : "impeditivo", detalhe: v.inicioPrevisto ? "Visita agendada." : "Visita sem data/horário.", responsavel: escritorio, proximaAcao: v.inicioPrevisto ? null : "Agendar a visita" });
+  add({ codigo: "agendamento", rotulo: "Data e horário", status: ["agendada", "em_atendimento", "finalizada"].includes(v.situacao) ? "ok" : "impeditivo", detalhe: v.inicioPrevisto ? "Visita agendada." : "Visita sem data/horário.", responsavel: escritorio, proximaAcao: v.inicioPrevisto ? null : "Agendar a visita" });
   const endereco = local ? [local.logradouro, local.numero, local.bairro, local.cidade].filter(Boolean).join(", ") : "";
   add({ codigo: "endereco", rotulo: "Cliente e endereço", status: endereco ? "ok" : "impeditivo", detalhe: endereco ? `${cli.nome} — ${endereco}` : `${cli.nome}: local/endereço não informado.`, responsavel: escritorio, proximaAcao: endereco ? null : "Cadastrar local com endereço na OS" });
   const tel = contato?.telefone ?? cli.telefone;
