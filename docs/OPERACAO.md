@@ -16,9 +16,9 @@ Ver `.env.example` (sem segredos). Na Vercel: `APP_ENV=production`, `DATABASE_UR
 5. Nunca rodar `db:seed-demo` em produção (o script recusa com `APP_ENV=production`; contas demo também são recusadas no login).
 
 ## Rotinas agendadas (Vercel Cron — `vercel.json`)
-- `mensalidades` (diária, idempotente por competência), `lembretes` (diária), `pedidos` (a cada 6 h — consulta periódica, **não** é tempo real; hoje registra "ignorado" até a integração ser validada).
+- `mensalidades` (diária, idempotente por competência), `lembretes` (diária), `pedidos` (diária — consulta periódica, **não** é tempo real; hoje registra "ignorado" até a integração ser validada).
 - Chamadas autenticadas por `CRON_SECRET`. Cada execução fica em `rotina_execucao` (sucesso, erro, tentativa); reprocessamento manual em **Configurações → Rotinas**. Repetir no mesmo período não duplica.
-- Planos gratuitos da Vercel limitam a frequência de cron; ajuste conforme o plano contratado.
+- O plano Hobby da Vercel só aceita cron diário (por isso todas as rotinas são diárias). No plano Pro, a rotina de pedidos pode ficar mais frequente.
 
 ## Backup e restauração
 - **Ainda não há backup ativo configurado por este projeto.** No Neon, verificar/contratar a retenção de histórico (point-in-time restore) do plano escolhido.
