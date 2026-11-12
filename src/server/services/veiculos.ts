@@ -262,7 +262,7 @@ export async function listarVeiculos(dbx: DBOrTx, ctx: Ctx) {
   return dbx.select({ v: veiculo, responsavelNome: profissional.nome,
     irregularidades: sql<number>`(select count(*)::int from ${pendencia} p where p.veiculo_id = ${qc(veiculo.id)} and p.tipo = 'veiculo_irregularidade' and p.situacao in ('aberta','em_andamento'))`,
     designados: sql<string | null>`(select string_agg(p.nome, ', ') from ${profissional} p where p.veiculo_id = ${qc(veiculo.id)} and p.ativo)`,
-    ultimoChecklist: sql<string | null>`(select max(realizado_em) from ${checklistResposta} c where c.veiculo_id = ${qc(veiculo.id)})`,
+    ultimoChecklist: sql<string | null>`(select max(criado_em) from ${checklistResposta} c where c.veiculo_id = ${qc(veiculo.id)})`,
     checklistValido: sql<boolean>`exists (select 1 from ${checklistResposta} c where c.veiculo_id = ${qc(veiculo.id)} and c.tipo = 'veiculo_saida' and c.valido_ate > now())`,
   }).from(veiculo).leftJoin(profissional, eq(profissional.id, veiculo.responsavelProfissionalId)).where(and(...conds)).orderBy(asc(veiculo.identificacao));
 }

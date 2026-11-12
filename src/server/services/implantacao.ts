@@ -65,3 +65,21 @@ export async function custodiaInicialFerramenta(tx: DBOrTx, ctx: Ctx, ferramenta
   await tx.update(ferramenta).set({ situacao: "em_custodia", custodianteProfissionalId: p.id, custodiaDesde: new Date(), versao: f.versao + 1 }).where(eq(ferramenta.id, ferramentaId));
   await auditar(tx, ctx, { acao: "implantacao.custodia_ferramenta", entidadeTipo: "ferramenta", entidadeId: ferramentaId, depois: { profissional: p.nome } });
 }
+
+/** Os donos registram a política de delegação ao operador financeiro (sem limites presumidos pelo sistema). */
+export async function definirPoliticaFinanceira(tx: DBOrTx, ctx: Ctx, definida: boolean, observacao: string) {
+  exigir(ctx, "configuracao.gerenciar"); exigir(ctx, "financeiro.aprovar");
+  const cfg = await obterConfig(tx, ctx.empresaId);
+  const novo = { ...cfg.financeiro, politicaDelegacaoDefinida: definida, observacaoPolitica: observacao };
+  await tx.update(empresa).set({ config: sql`jsonb_set(coalesce(${empresa.config}, '{}'::jsonb), '{financeiro}', ${JSON.stringify(novo)}::jsonb)` }).where(eq(empresa.id, ctx.empresaId));
+  await auditar(tx, ctx, { acao: "config.politica_financeira", entidadeTipo: "empresa", entidadeId: ctx.empresaId, antes: cfg.financeiro, depois: novo, sensivel: true });
+}
+
+/** Atualiza parâmetros operacionais (prazos, checklist obrigatório, dia de previsão dos autônomos). */
+export async function salvarParametros(tx: DBOrTx, ctx: Ctx, secao: "materiais" | "ferramentas" | "veiculos" | "autonomos", valores: Record<string, unknown>) {
+  exigir(ctx, "configuracao.gerenciar");
+  const cfg = await obterConfig(tx, ctx.empresaId);
+  const novo = { ...(cfg[secao] as Record<string, unknown>), ...valores };
+  await tx.update(empresa).set({ config: sql`jsonb_set(coalesce(${empresa.config}, '{}'::jsonb), ${"{" + secao + "}"}::text[], ${JSON.stringify(novo)}::jsonb)` }).where(eq(empresa.id, ctx.empresaId));
+  await auditar(tx, ctx, { acao: `config.${secao}`, entidadeTipo: "empresa", entidadeId: ctx.empresaId, antes: cfg[secao], depois: novo });
+}

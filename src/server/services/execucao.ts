@@ -18,7 +18,7 @@ import { parseQtdInput } from "@/lib/quantidade";
 
 /** Dados da visita para o técnico: só o necessário ao atendimento, sem preços nem financeiro. */
 export async function obterVisitaTecnico(dbx: DBOrTx, ctx: Ctx, visitaId: string) {
-  await exigirAcessoVisita(dbx, ctx, visitaId, "visita.executar");
+  await exigirAcessoVisita(dbx, ctx, visitaId, pode(ctx, "visita.executar", "proprio") ? "visita.executar" : "os.ver");
   const [v] = await dbx.select().from(visita).where(eq(visita.id, visitaId));
   const [o] = await dbx.select({ id: ordemServico.id, numero: ordemServico.numero, descricao: ordemServico.descricao, prioridade: ordemServico.prioridade, observacoes: ordemServico.observacoes, clienteId: ordemServico.clienteId, localId: ordemServico.localId, contatoId: ordemServico.contatoId, etapa: ordemServico.etapa, origem: ordemServico.origem })
     .from(ordemServico).where(eq(ordemServico.id, v.osId));

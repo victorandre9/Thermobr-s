@@ -1,4 +1,5 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { qc } from "../db/sql";
 import type { DBOrTx } from "../db";
 import { materialPosicao, papel, papelPermissao, profissional, usuario, usuarioPapel, usuarioPermissao } from "../db/schema";
 import { type Ctx, exigir, ehGestor } from "../auth/contexto";
@@ -11,7 +12,7 @@ import { revogarTodasSessoes } from "./autenticacao";
 export async function listarUsuarios(dbx: DBOrTx, ctx: Ctx) {
   exigir(ctx, "usuario.gerenciar");
   const us = await dbx.select({ id: usuario.id, nome: usuario.nome, email: usuario.email, ativo: usuario.ativo, demo: usuario.demo, ultimoLoginEm: usuario.ultimoLoginEm })
-    .from(usuario).where(eq(usuario.empresaId, ctx.empresaId)).orderBy(asc(usuario.nome));
+    .from(usuario).where(and(eq(usuario.empresaId, ctx.empresaId), sql`${qc(usuario.email)} not like '%@sistema.invalid'`)).orderBy(asc(usuario.nome));
   const ps = await dbx.select({ usuarioId: usuarioPapel.usuarioId, codigo: papel.codigo, nome: papel.nome }).from(usuarioPapel).innerJoin(papel, eq(papel.id, usuarioPapel.papelId)).where(eq(papel.empresaId, ctx.empresaId));
   const profs = await dbx.select().from(profissional).where(eq(profissional.empresaId, ctx.empresaId));
   return us.map((u) => ({ ...u, papeis: ps.filter((p) => p.usuarioId === u.id), profissional: profs.find((p) => p.usuarioId === u.id) ?? null }));
@@ -115,7 +116,7 @@ export async function criarProfissional(tx: DBOrTx, ctx: Ctx, d: { nome: string;
   return p;
 }
 
-export async function atualizarProfissional(tx: DBOrTx, ctx: Ctx, id: string, d: { nome?: string; vinculo?: "autonomo" | "proprio"; funcao?: string; telefone?: string | null; veiculoId?: string | null; ativo?: boolean }, motivo?: string) {
+export async function atualizarProfissional(tx: DBOrTx, ctx: Ctx, id: string, d: { nome?: string; vinculo?: "autonomo" | "proprio"; funcao?: string; telefone?: string | null; veiculoId?: string | null; ativo?: boolean; competencias?: string[]; regioes?: string[] }, motivo?: string) {
   exigir(ctx, "profissional.gerenciar");
   const [antes] = await tx.select().from(profissional).where(and(eq(profissional.id, id), eq(profissional.empresaId, ctx.empresaId)));
   if (!antes) throw new ErroNegocio("Profissional não encontrado.");
