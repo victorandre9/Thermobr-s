@@ -24,5 +24,17 @@ export function getPool(): Pool {
   return g.__pgPool;
 }
 
-export const db: DB = g.__db ?? (g.__db = drizzle(getPool(), { schema }));
+function getDb(): DB {
+  if (!g.__db) g.__db = drizzle(getPool(), { schema });
+  return g.__db;
+}
+
+/** Conexão criada só no primeiro uso (o build não precisa de DATABASE_URL). */
+export const db: DB = new Proxy({} as DB, {
+  get(_, prop) {
+    const real = getDb() as unknown as Record<string | symbol, unknown>;
+    const v = real[prop];
+    return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(real) : v;
+  },
+});
 export { schema };

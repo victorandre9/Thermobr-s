@@ -10,7 +10,8 @@ import path from "node:path";
 export interface Storage { salvar(chave: string, dados: Buffer, mime: string): Promise<void>; ler(chave: string): Promise<Buffer>; }
 
 function localStorage(): Storage {
-  const base = path.resolve(process.env.STORAGE_LOCAL_DIR ?? "./storage");
+  // Na Vercel só /tmp é gravável (temporário — apenas demonstração; produção usa S3).
+  const base = path.resolve(process.env.STORAGE_LOCAL_DIR ?? (process.env.VERCEL ? "/tmp/thermobras-storage" : "./storage"));
   const resolver = (chave: string) => {
     const p = path.resolve(base, chave);
     if (!p.startsWith(base + path.sep)) throw new Error("Chave inválida");
