@@ -8,7 +8,7 @@ import { contasDemo } from "@/server/services/autenticacao";
 import { ASSINATURA } from "@/lib/marca";
 import { entrar, entrarDemo } from "../actions";
 
-export const metadata = { title: "Entrar" };
+export const metadata = { title: { absolute: "Thermobrás - Projeto de Gestão Integrada" } };
 
 function perfil(papeis: string, vinculo: string | null) {
   if (papeis.includes("gestor")) return { nome: "Gestor geral / aprovador", desc: "Tudo: painel, aprovações, financeiro, configurações", icone: Crown, ordem: 1, cls: "" };

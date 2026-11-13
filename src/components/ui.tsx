@@ -10,12 +10,17 @@ export function cx(...c: Array<string | false | null | undefined>) { return c.fi
 export function Marca({ compacta = false }: { compacta?: boolean }) {
   if (LOGO_SRC) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={LOGO_SRC} alt="Thermobrás" width={compacta ? LOGO_LARGURA * 0.7 : LOGO_LARGURA} height={compacta ? LOGO_ALTURA * 0.7 : LOGO_ALTURA} className="h-auto" />;
+    return (
+      <span className="inline-flex flex-col items-start leading-tight">
+        <span className="inline-block rounded-xl bg-white px-1.5 py-1 shadow-[0_1px_4px_rgba(16,34,56,0.08)]"><img src={LOGO_SRC} alt="Thermobrás Ar Condicionado" width={compacta ? Math.round(LOGO_LARGURA * 0.62) : LOGO_LARGURA} height={compacta ? Math.round(LOGO_ALTURA * 0.62) : LOGO_ALTURA} className="block h-auto" /></span>
+        {!compacta && <span className="mt-1.5 block text-[11px] font-semibold text-muted">Projeto de Gestão Integrada</span>}
+      </span>
+    );
   }
   return (
     <span className="leading-tight">
       <span className={cx("block font-extrabold tracking-tight text-navy", compacta ? "text-lg" : "text-xl")}>Thermobrás</span>
-      {!compacta && <span className="block text-[11px] font-medium text-muted">Gestão operacional e financeira</span>}
+      {!compacta && <span className="block text-[11px] font-medium text-muted">Projeto de Gestão Integrada</span>}
     </span>
   );
 }

@@ -3,8 +3,12 @@ import "./globals.css";
 import { FundoGelo } from "@/components/gelo";
 
 export const metadata: Metadata = {
-  title: { default: "Thermobrás", template: "%s · Thermobrás" },
-  description: "Gestão operacional e financeira da Thermobrás — OS, agenda, ativos, materiais e financeiro operacional.",
+  title: { default: "Thermobrás - Projeto de Gestão Integrada", template: "%s · Thermobrás" },
+  description: "Thermobrás Ar Condicionado — ordens de serviço, agenda, ativos, materiais e financeiro em um só lugar.",
+  applicationName: "Thermobrás - Projeto de Gestão Integrada",
+  appleWebApp: { title: "Thermobrás", capable: true, statusBarStyle: "default" },
+  openGraph: { title: "Thermobrás - Projeto de Gestão Integrada", description: "Ordens de serviço, agenda, ativos, materiais e financeiro em um só lugar.", siteName: "Thermobrás", locale: "pt_BR", type: "website" },
+  twitter: { card: "summary_large_image", title: "Thermobrás - Projeto de Gestão Integrada" },
   robots: { index: false, follow: false },
 };
 export const viewport: Viewport = { themeColor: "#102238", width: "device-width", initialScale: 1 };
