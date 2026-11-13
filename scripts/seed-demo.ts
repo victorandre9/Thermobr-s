@@ -32,7 +32,7 @@ const tx = <R>(fn: (t: T) => Promise<R>) => db.transaction(fn);
 
 async function main() {
   const [ja] = await db.select().from(s.empresa).where(eq(s.empresa.nome, "Thermobrás (DEMONSTRAÇÃO)"));
-  if (ja) { console.log("Demonstração base já existe."); await popularMassa(db, ja.id); await pool.end(); return; }
+  if (ja) { console.log("Demonstração base já existe."); await popularMassa(db, ja.id); await renomearDemonstrativo(); await pool.end(); return; }
   const [emp] = await db.insert(s.empresa).values({ nome: "Thermobrás (DEMONSTRAÇÃO)", config: { financeiro: { politicaDelegacaoDefinida: false } } }).returning();
   await tx((t) => garantirEstrutura(t, emp.id));
   const hash = await hashSenha(SENHA);
@@ -169,6 +169,27 @@ async function main() {
   for (const e of ["gestor", "socio", "admin", "financeiro", "autonomo.a", "autonomo.b", "autonomo.c", "proprio1", "proprio2"]) console.log(`  ${e}@demo.thermobras.local`);
   void aut3; void prop2; void caixa;
   await popularMassa(db, emp.id);
+  await renomearDemonstrativo();
   await pool.end();
+}
+
+/** Troca "demo"/"Demo"/"DEMO-" por "demonstrativo" nos textos exibidos dos dados fictícios (idempotente; não toca e-mails, códigos ou chaves). */
+async function renomearDemonstrativo() {
+  const pular = new Set(["email", "acao", "origem", "provedor", "codigo", "tipo", "situacao", "entidade_tipo", "senha_hash", "token_hash", "chave", "chave_unicidade"]);
+  const { rows } = await pool.query(`select table_name, column_name from information_schema.columns where table_schema = 'public' and data_type in ('text','character varying')`);
+  let n = 0;
+  for (const r of rows as Array<{ table_name: string; column_name: string }>) {
+    if (pular.has(r.column_name) || r.column_name.startsWith("chave") || r.table_name.startsWith("__")) continue;
+    const t = `"${r.table_name}"`, c = `"${r.column_name}"`;
+    const res = await pool.query(`update ${t} set ${c} = regexp_replace(regexp_replace(regexp_replace(${c}, '\\mDEMO-', 'DEMONSTRATIVO-', 'g'), '\\mDemo\\M', 'Demonstrativo', 'g'), '\\mdemo\\M', 'demonstrativo', 'g') where ${c} ~ '\\m(DEMO-|Demo\\M|demo\\M)' and ${c} !~ '@demo\\.'`);
+    n += res.rowCount ?? 0;
+  }
+  const js = await pool.query(`select table_name, column_name from information_schema.columns where table_schema = 'public' and data_type = 'jsonb'`);
+  for (const r of js.rows as Array<{ table_name: string; column_name: string }>) {
+    const t = `"${r.table_name}"`, c = `"${r.column_name}"`;
+    const res = await pool.query(`update ${t} set ${c} = regexp_replace(regexp_replace(${c}::text, '\\(demo\\)', '(demonstrativo)', 'g'), '\\mDemo\\M', 'Demonstrativo', 'g')::jsonb where ${c}::text ~ '(\\(demo\\)|\\mDemo\\M)'`);
+    n += res.rowCount ?? 0;
+  }
+  if (n) console.log(`Textos demonstrativos ajustados: ${n}`);
 }
 main().catch(async (e) => { console.error(e); await pool.end(); process.exit(1); });

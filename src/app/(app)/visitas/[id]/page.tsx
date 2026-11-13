@@ -1,3 +1,4 @@
+import { Voltar } from "@/components/voltar";
 import Link from "next/link";
 import { MapPin, Phone, Users, ClipboardCheck, PlayCircle, Flag, PackagePlus, MessageSquareWarning } from "lucide-react";
 import { db } from "@/server/db";
@@ -29,7 +30,7 @@ export default async function Visita({ params }: { params: Promise<{ id: string 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div>
-        <Link href={pode(ctx, "os.ver", "empresa") ? `/os/${d.os.id}` : "/"} className="text-[13px] font-medium text-ice-strong">← {pode(ctx, "os.ver", "empresa") ? `OS #${d.os.numero}` : "Minhas visitas"}</Link>
+        <Voltar href={pode(ctx, "os.ver", "empresa") ? `/os/${d.os.id}` : "/"} rotulo={pode(ctx, "os.ver", "empresa") ? `OS #${d.os.numero}` : "Minhas visitas"} />
         <h1 className="mt-1 text-[22px] font-bold text-navy">{d.cliente.nome}</h1>
         <div className="flex flex-wrap items-center gap-2 text-[13px] text-text-2">OS #{d.os.numero} · visita {v.sequencia} <SituacaoVisita s={v.situacao} r={v.resultado} />{["agendada", "nao_agendada"].includes(v.situacao) && <Badge tom={pr.pronta ? "ok" : "critico"}>{pr.situacao}</Badge>}</div>
       </div>

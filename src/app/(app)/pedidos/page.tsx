@@ -16,7 +16,7 @@ export default async function Pedidos({ searchParams }: { searchParams: Promise<
     <div>
       <PageHeader titulo="Pedidos para programar" subtitulo="Entrada de pedidos externos → montagem da OS → equipe → agenda" />
       <div className="mb-4"><Aviso tom={integ.integracao?.status === "conectada" ? "ok" : "atencao"} titulo={`Integração Treeunfe: ${integ.integracao?.status === "conectada" ? "conectada" : "aguardando validação"}`}>
-        A disponibilidade de API de PEDIDOS da Treeunfe não foi confirmada (API fiscal não comprova acesso a pedidos). Nenhum pedido real é importado até a validação. Pedidos marcados como “demo” são fictícios.</Aviso></div>
+        A disponibilidade de API de PEDIDOS da Treeunfe não foi confirmada (API fiscal não comprova acesso a pedidos). Nenhum pedido real é importado até a validação. Pedidos marcados como “demonstrativo” são fictícios.</Aviso></div>
       <Filtros>{[...Object.entries(SIT), ["todos", "Todos"]].map(([k, r]) => <ChipLink key={k} href={`/pedidos?situacao=${k}`} ativo={sit === k}>{r}</ChipLink>)}</Filtros>
       <Card pad={false}>
         {rows.length === 0 ? <Vazio titulo="Nenhum pedido nesta situação">Quando a integração for validada, os pedidos aparecerão aqui automaticamente.</Vazio> : (
@@ -24,7 +24,7 @@ export default async function Pedidos({ searchParams }: { searchParams: Promise<
             <tbody>{rows.map(({ p, osNumero, clienteNome }) => {
               const d = p.dadosOriginais as { cliente?: { nome?: string }; itens?: Array<{ descricao: string }> };
               return (
-                <tr key={p.id}><td><Link href={`/pedidos/${p.id}`} className="font-semibold text-navy hover:underline">{p.idExterno}</Link> {p.origem === "demo" && <Badge tom="neutro" icone={false}>demo</Badge>}</td>
+                <tr key={p.id}><td><Link href={`/pedidos/${p.id}`} className="font-semibold text-navy hover:underline">{p.idExterno}</Link> {p.origem === "demo" && <Badge tom="neutro" icone={false}>demonstrativo</Badge>}</td>
                   <td>{d.cliente?.nome}{clienteNome && <div className="text-[12px] text-muted">Vinculado: {clienteNome}</div>}</td><td className="text-[12.5px]">{d.itens?.map((i) => i.descricao).join("; ")}</td>
                   <td className="text-[12.5px]">{fmtDataHora(p.recebidoEm)}</td><td><Badge tom={p.situacao === "conferencia" ? "critico" : p.situacao === "para_programar" ? "atencao" : "neutro"}>{SIT[p.situacao]}</Badge></td><td>{osNumero ? `#${osNumero}` : "—"}</td></tr>
               );

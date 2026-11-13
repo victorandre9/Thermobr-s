@@ -39,7 +39,7 @@ export default async function Usuario({ params }: { params: Promise<{ id: string
           <ActionForm action={acaoUsuario} className="flex gap-2" confirmar={u.ativo ? "Desativar este usuário? O histórico é preservado." : undefined}>{H}<input type="hidden" name="op" value="ativo" /><input type="hidden" name="ativo" value={u.ativo ? "0" : "1"} /><input name="motivo" placeholder="Motivo" className="input !w-56" required /><Enviar className={u.ativo ? "btn btn-danger" : "btn btn-ok"}>{u.ativo ? "Desativar" : "Reativar"}</Enviar></ActionForm>
         </div>
       </Card>}
-      <Card titulo="Histórico"><ul className="space-y-1 text-[12.5px]">{hist.map((h) => <li key={h.id}>{fmtDataHora(h.em)} · {h.acao}{h.motivo && ` — ${h.motivo}`}</li>)}</ul></Card>
+      <Card titulo="Histórico"><ul className="space-y-1 text-[12.5px]">{hist.map((h) => <li key={h.id}>{fmtDataHora(h.em)} · {h.acao === "login.demo" ? "login (demonstrativo)" : h.acao}{h.motivo && ` — ${h.motivo}`}</li>)}</ul></Card>
     </div>
   );
 }

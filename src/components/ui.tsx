@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { AlertTriangle, CheckCircle2, Info, OctagonAlert, Inbox, type LucideIcon } from "lucide-react";
 import { formatBRL } from "@/lib/money";
+import { Voltar } from "./voltar";
 import { formatQtd } from "@/lib/quantidade";
 import { LOGO_SRC, LOGO_LARGURA, LOGO_ALTURA } from "@/lib/marca";
 
@@ -29,7 +30,7 @@ export function PageHeader({ titulo, subtitulo, acoes, voltar }: { titulo: strin
   return (
     <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
-        {voltar && <Link href={voltar.href} className="mb-1 inline-block text-[13px] font-medium text-ice-strong hover:underline">← {voltar.rotulo}</Link>}
+        <div>{voltar ? <Voltar href={voltar.href} rotulo={voltar.rotulo} /> : <Voltar />}</div>
         <h1 className="text-[22px] font-bold tracking-tight text-navy">{titulo}</h1>
         {subtitulo && <div className="mt-0.5 text-[13.5px] text-muted">{subtitulo}</div>}
       </div>

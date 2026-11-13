@@ -16,7 +16,7 @@ export default async function Clientes({ searchParams }: { searchParams: Promise
       <Card pad={false}>
         {rows.length === 0 ? <Vazio titulo="Nenhum cliente encontrado" /> : (
           <div className="tbl-wrap"><table className="tbl"><thead><tr><th>Cliente</th><th>Documento</th><th>Telefone</th><th>Locais</th><th>Equipamentos</th><th>Contratos ativos</th></tr></thead>
-            <tbody>{rows.map((c) => <tr key={c.id}><td><Link href={`/clientes/${c.id}`} className="font-semibold text-navy hover:underline">{c.nome}</Link> {c.demo && <Badge tom="neutro" icone={false}>demo</Badge>}{!c.ativo && <Badge tom="neutro">inativo</Badge>}</td><td>{c.documento ?? "—"}</td><td>{c.telefone ?? "—"}</td><td>{c.locais}</td><td>{c.equipamentos}</td><td>{c.contratosAtivos}</td></tr>)}</tbody></table></div>
+            <tbody>{rows.map((c) => <tr key={c.id}><td><Link href={`/clientes/${c.id}`} className="font-semibold text-navy hover:underline">{c.nome}</Link> {c.demo && <Badge tom="neutro" icone={false}>demonstrativo</Badge>}{!c.ativo && <Badge tom="neutro">inativo</Badge>}</td><td>{c.documento ?? "—"}</td><td>{c.telefone ?? "—"}</td><td>{c.locais}</td><td>{c.equipamentos}</td><td>{c.contratosAtivos}</td></tr>)}</tbody></table></div>
         )}
         <Paginacao total={total} limite={50} offset={offset} base={`/clientes${sp.busca ? `?busca=${sp.busca}` : ""}`} />
       </Card>

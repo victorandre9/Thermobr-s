@@ -38,7 +38,7 @@ export default async function ListaOS({ searchParams }: { searchParams: Promise<
               const dias = Math.floor((agora - new Date(o.etapaDesde).getTime()) / 86400000);
               return (
                 <tr key={o.id}>
-                  <td><Link href={`/os/${o.id}`} className="font-bold text-navy hover:underline">#{o.numero}</Link><div className="text-[12px] text-muted">{rotulo(OS_ORIGENS, o.origem)}</div>{o.demo && <Badge tom="neutro" icone={false}>demo</Badge>}</td>
+                  <td><Link href={`/os/${o.id}`} className="font-bold text-navy hover:underline">#{o.numero}</Link><div className="text-[12px] text-muted">{rotulo(OS_ORIGENS, o.origem)}</div>{o.demo && <Badge tom="neutro" icone={false}>demonstrativo</Badge>}</td>
                   <td><div className="font-medium">{o.clienteNome}</div><div className="text-[12px] text-muted">{o.localNome ?? "—"}</div><div className="max-w-xs truncate text-[12px] text-text-2">{o.descricao}</div></td>
                   <td className="space-y-1"><EtapaOS e={o.etapa} /><div><Prioridade p={o.prioridade} /></div>{o.motivoEtapa && <div className="text-[12px] text-muted">{o.motivoEtapa}</div>}</td>
                   <td><div className="text-[13px]">{o.equipe ?? <span className="font-semibold text-warn">Sem equipe</span>}</div><div className="text-[12px] text-muted">{o.proximaVisita ? fmtDataHora(o.proximaVisita) : "Sem data"}</div></td>

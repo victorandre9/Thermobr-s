@@ -26,7 +26,7 @@ export default async function Pedido({ params, searchParams }: { params: Promise
   const H = <input type="hidden" name="pedidoId" value={id} />;
   return (
     <div className="max-w-4xl space-y-5">
-      <PageHeader titulo={`Pedido ${p.idExterno}`} voltar={{ href: "/pedidos", rotulo: "Pedidos" }} subtitulo={`Origem: ${p.origem === "demo" ? "demonstração (fictício)" : p.origem} · recebido ${fmtDataHora(p.recebidoEm)} · versão ${p.versaoExterna ?? "—"}`} />
+      <PageHeader titulo={`Pedido ${p.idExterno}`} voltar={{ href: "/pedidos", rotulo: "Pedidos" }} subtitulo={`Origem: ${p.origem === "demo" ? "demonstrativo (fictício)" : p.origem} · recebido ${fmtDataHora(p.recebidoEm)} · versão ${p.versaoExterna ?? "—"}`} />
       {p.situacao === "conferencia" && <Aviso tom="critico" titulo="Pedido alterado na origem após a criação da OS">{p.motivoConferencia}. Serviços realizados, parcelas e baixas NÃO foram alterados. Confira e registre a decisão.</Aviso>}
       <Card titulo="Dados originais (preservados, sem edição)">
         <p className="text-[14px]"><b>{d.cliente?.nome}</b> {d.cliente?.documento} {d.cliente?.telefone}</p>
