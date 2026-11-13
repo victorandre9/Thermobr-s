@@ -12,6 +12,7 @@ import { auditar } from "./auditoria";
 import { exigirAcessoVisita } from "./escopo";
 import { recalcularEtapa, tocarOS } from "./os";
 import { garantirPendencia } from "./pendencias";
+import { checklistDoDia } from "./veiculos";
 import { obterConfig } from "./config";
 import { MOTIVOS_RESULTADO } from "@/lib/dominio";
 import { parseQtdInput } from "@/lib/quantidade";
@@ -71,24 +72,24 @@ export async function checkin(tx: DBOrTx, ctx: Ctx, visitaId: string) {
   await exigirResponsavel(tx, ctx, visitaId);
   const avisos: string[] = [];
   const prof = ctx.profissional;
-  // Técnico da equipe própria: checklist do veículo designado (nunca para autônomo).
+  // Técnico da equipe própria: checklist do veículo de HOJE antes do check-in (nunca para autônomo).
+  let veiculoDoDia: string | null = null;
   if (prof?.vinculo === "proprio") {
     const cfg = await obterConfig(tx, ctx.empresaId);
-    if (!prof.veiculoId) {
+    const ck = await checklistDoDia(tx, ctx);
+    veiculoDoDia = ck?.r.veiculoId ?? prof.veiculoId ?? null;
+    if (!ck && cfg.veiculos.checklistSaidaObrigatorio) throw new ErroNegocio("Faça o checklist do veículo de hoje antes do check-in (botão “Fazer checklist de hoje” na tela inicial).");
+    if (!ck) avisos.push("Checklist do veículo de hoje pendente.");
+    if (!veiculoDoDia) {
       await garantirPendencia(tx, ctx, { tipo: "veiculo_sem_designacao", titulo: `${prof.nome} sem veículo designado`, descricao: "Técnico da equipe própria iniciou atendimento sem veículo atribuído. Defina a designação.", profissionalId: prof.id, prioridade: "media", chave: `veiculo_sem_designacao:${prof.id}` });
       avisos.push("Você não tem veículo designado. O escritório foi avisado.");
-    } else {
-      const [valido] = await tx.select({ id: checklistResposta.id }).from(checklistResposta)
-        .where(and(eq(checklistResposta.veiculoId, prof.veiculoId), eq(checklistResposta.tipo, "veiculo_saida"), eq(checklistResposta.profissionalId, prof.id), sql`${qc(checklistResposta.validoAte)} > now()`)).limit(1);
-      if (!valido && cfg.veiculos.checklistSaidaObrigatorio) avisos.push("Checklist de saída do veículo pendente para este turno.");
-      if (cfg.veiculos.bloquearComIrregularidadeCritica) {
-        const [crit] = await tx.select({ id: pendencia.id, titulo: pendencia.titulo }).from(pendencia)
-          .where(and(eq(pendencia.veiculoId, prof.veiculoId), eq(pendencia.tipo, "veiculo_irregularidade"), eq(pendencia.prioridade, "critica"), inArray(pendencia.situacao, ["aberta", "em_andamento"]), sql`${qc(pendencia.liberacaoExcepcional)} is null`)).limit(1);
-        if (crit) throw new ErroNegocio(`Veículo com irregularidade crítica sem liberação: "${crit.titulo}". Fale com o gestor para liberação excepcional ou troca de veículo.`);
-      }
+    } else if (cfg.veiculos.bloquearComIrregularidadeCritica) {
+      const [crit] = await tx.select({ id: pendencia.id, titulo: pendencia.titulo }).from(pendencia)
+        .where(and(eq(pendencia.veiculoId, veiculoDoDia), eq(pendencia.tipo, "veiculo_irregularidade"), eq(pendencia.prioridade, "critica"), inArray(pendencia.situacao, ["aberta", "em_andamento"]), sql`${qc(pendencia.liberacaoExcepcional)} is null`)).limit(1);
+      if (crit) throw new ErroNegocio(`Veículo com irregularidade crítica sem liberação: "${crit.titulo}". Fale com o gestor para liberação excepcional ou troca de veículo.`);
     }
   }
-  const [v] = await tx.update(visita).set({ situacao: "em_atendimento", checkinEm: sql`now()`, checkinPor: ctx.usuarioId, veiculoId: prof?.vinculo === "proprio" ? prof.veiculoId : null })
+  const [v] = await tx.update(visita).set({ situacao: "em_atendimento", checkinEm: sql`now()`, checkinPor: ctx.usuarioId, veiculoId: prof?.vinculo === "proprio" ? veiculoDoDia : null })
     .where(and(eq(visita.id, visitaId), eq(visita.situacao, "agendada"))).returning();
   if (!v) {
     const [atual] = await tx.select().from(visita).where(eq(visita.id, visitaId));

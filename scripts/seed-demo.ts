@@ -7,7 +7,8 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { and, eq } from "drizzle-orm";
 import * as s from "../src/server/db/schema";
-import { garantirEstrutura } from "../src/server/services/estrutura";
+import { modeloChecklist, responderChecklistVeiculo } from "../src/server/services/veiculos";
+import { garantirEstrutura, garantirChecklistVeiculoLeve } from "../src/server/services/estrutura";
 import { carregarCtx, type Ctx } from "../src/server/auth/contexto";
 import { hashSenha } from "../src/server/auth/senha";
 import { criarOS, aprovarComercialmente, conferirOS } from "../src/server/services/os";
@@ -32,7 +33,7 @@ const tx = <R>(fn: (t: T) => Promise<R>) => db.transaction(fn);
 
 async function main() {
   const [ja] = await db.select().from(s.empresa).where(eq(s.empresa.nome, "Thermobrás (DEMONSTRAÇÃO)"));
-  if (ja) { console.log("Demonstração base já existe."); await popularMassa(db, ja.id); await renomearDemonstrativo(); await pool.end(); return; }
+  if (ja) { console.log("Demonstração base já existe."); await popularMassa(db, ja.id); if (await db.transaction((t) => garantirChecklistVeiculoLeve(t, ja.id))) console.log("Checklist de veículo leve atualizado."); await renomearDemonstrativo(); await pool.end(); return; }
   const [emp] = await db.insert(s.empresa).values({ nome: "Thermobrás (DEMONSTRAÇÃO)", config: { financeiro: { politicaDelegacaoDefinida: false } } }).returning();
   await tx((t) => garantirEstrutura(t, emp.id));
   const hash = await hashSenha(SENHA);
@@ -131,6 +132,10 @@ async function main() {
   const ent = await tx((t) => registrarEntrega(t, A, { materialId: mats["CU-14"], quantidade: "10", origemPosicaoId: almox.id, profissionalId: prop1.pid!, osId: os1.id }));
   const P1 = await prop1.ctx();
   await tx((t) => confirmarRecebimento(t, P1, ent.id));
+  { // técnico próprio faz o checklist do veículo de hoje antes do check-in
+    const { itens } = await modeloChecklist(db, P1, "veiculo_saida");
+    await tx((t) => responderChecklistVeiculo(t, P1, P1.profissional!.veiculoId!, "veiculo_saida", null, itens.map((i) => ({ itemId: i.id, resultado: "conforme" as const }))));
+  }
   await tx((t) => checkin(t, P1, v1.id));
   await tx((t) => salvarExecucao(t, P1, v1.id, { equipamentoId: c1.e1.id, diagnostico: "Ponto elétrico ausente", servicoRealizado: "Fixação de evaporadora e passagem de tubulação", testeFuncionamento: "nao_testado", resultado: "parcial" }));
   await tx((t) => checkout(t, P1, v1.id, { resultado: "parcial", motivo: "defeito_adicional", pendenciaDescricao: "Falta ponto elétrico dedicado (responsabilidade do cliente).", proximaAcao: "Retornar após o cliente instalar o ponto elétrico" }));

@@ -76,16 +76,34 @@ describe("Autônomo", () => {
 });
 
 describe("Técnico da Thermobrás", () => {
-  it("vê o veículo atribuído e faz checklist só dele; checklist válido é reutilizado", async () => {
-    expect(podeChecklistVeiculo(c.ctx.prop, c.v1.id)).toBe(true);
-    expect(podeChecklistVeiculo(c.ctx.prop, c.v2.id)).toBe(false);
+  it("não faz check-in sem o checklist do veículo de hoje", async () => {
+    const { v } = await osComVisita("avulso", [c.prof.prop], 7);
+    await expect(tx((t) => checkin(t, c.ctx.prop, v.id))).rejects.toThrow(/checklist do veículo de hoje/);
+  });
+  it("escolhe a placa do dia no checklist; checklist válido no dia é reutilizado e libera o check-in", async () => {
+    const { checklistDoDia } = await import("@/server/services/veiculos");
+    expect(podeChecklistVeiculo(c.ctx.prop, c.v2.id)).toBe(true); // escolhe qualquer veículo ativo
+    expect(podeChecklistVeiculo(c.ctx.aut, c.v1.id)).toBe(false); // autônomo nunca
     const { itens } = await modeloChecklist(db, c.ctx.gestor, "veiculo_saida");
     const resp = itens.map((i) => ({ itemId: i.id, resultado: "conforme" as const }));
+    // placa v2 hoje → vira o veículo designado
+    const r0 = await tx((t) => responderChecklistVeiculo(t, c.ctx.prop, c.v2.id, "veiculo_saida", 10, resp));
+    expect(r0.reutilizado).toBe(false);
+    expect((await db.select().from(s.profissional).where(eq(s.profissional.id, c.prof.prop)))[0].veiculoId).toBe(c.v2.id);
+    expect((await checklistDoDia(db, c.ctx.prop))?.r.veiculoId).toBe(c.v2.id);
+    // troca para v1 (novo checklist) e repetição no mesmo dia é reutilizada
     const r1 = await tx((t) => responderChecklistVeiculo(t, c.ctx.prop, c.v1.id, "veiculo_saida", 1000, resp));
     expect(r1.reutilizado).toBe(false);
     const r2 = await tx((t) => responderChecklistVeiculo(t, c.ctx.prop, c.v1.id, "veiculo_saida", 1010, resp));
     expect(r2.reutilizado).toBe(true);
-    await expect(tx((t) => responderChecklistVeiculo(t, c.ctx.prop, c.v2.id, "veiculo_saida", 10, resp))).rejects.toBeInstanceOf(ErroAcesso);
+    expect((await checklistDoDia(db, c.ctx.prop))?.r.veiculoId).toBe(c.v1.id);
+    // validade nunca passa do fim do dia (São Paulo)
+    const { intervaloDiaSP, hojeSP } = await import("@/lib/datas");
+    expect(new Date(r1.resposta.validoAte).getTime()).toBeLessThanOrEqual(intervaloDiaSP(hojeSP())[1].getTime());
+    // com checklist feito, check-in libera e registra o veículo do dia
+    const { v } = await osComVisita("avulso", [c.prof.prop], 3);
+    const r = await tx((t) => checkin(t, c.ctx.prop, v.id));
+    expect(r.visita.veiculoId).toBe(c.v1.id);
   });
   it("participação não gera pagamento de autônomo", async () => {
     const { os } = await osComVisita("avulso", [c.prof.prop, c.prof.aut2], 16);

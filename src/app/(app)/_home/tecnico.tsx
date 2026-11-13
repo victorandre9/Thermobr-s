@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { MapPin, Clock, ChevronRight, Wrench, Package, Wallet, AlertTriangle, PlayCircle } from "lucide-react";
+import { MapPin, Clock, ChevronRight, Wrench, Package, Wallet, AlertTriangle, PlayCircle, ClipboardCheck, CheckCircle2 } from "lucide-react";
 import { db } from "@/server/db";
 import type { Ctx } from "@/server/auth/contexto";
 import { minhasVisitas, minhasVisitasEmAndamento } from "@/server/services/agenda";
@@ -7,7 +7,7 @@ import { listarPendencias } from "@/server/services/pendencias";
 import { listarFerramentas, movimentosFerramentaPendentes } from "@/server/services/ferramentas";
 import { minhaCustodia } from "@/server/services/materiais";
 import { listarServicosAutonomos } from "@/server/services/autonomos";
-import { checklistValido } from "@/server/services/veiculos";
+import { checklistDoDia } from "@/server/services/veiculos";
 import { Aviso, Badge, Card, Dinheiro, Vazio } from "@/components/ui";
 import { fmtHora, fmtDia, hojeSP, intervaloDiaSP, somarDias, diaSP, NOMES_DIA, diaSemana } from "@/lib/datas";
 import { VISITA_SITUACOES, rotulo, AUTONOMO_SITUACAO } from "@/lib/dominio";
@@ -22,7 +22,7 @@ export async function HomeTecnico({ ctx }: { ctx: Ctx }) {
     ctx.profissional?.vinculo === "autonomo" ? listarServicosAutonomos(db, ctx) : Promise.resolve([]),
   ]);
   const prof = ctx.profissional!;
-  const checklist = prof.vinculo === "proprio" && prof.veiculoId ? await checklistValido(db, prof.veiculoId, "veiculo_saida", { profissionalId: prof.id }) : null;
+  const checklist = prof.vinculo === "proprio" ? await checklistDoDia(db, ctx) : null;
   const somar = (sit: string) => pag.filter((p) => p.situacaoExibida === sit).reduce((s, p) => s + (p.s.valorCombinadoCentavos ?? 0), 0);
   return (
     <div className="space-y-5">
@@ -30,10 +30,14 @@ export async function HomeTecnico({ ctx }: { ctx: Ctx }) {
       {andamento.map((a) => (
         <Link key={a.id} href={`/visitas/${a.id}`} className="card flex items-center gap-3 border-ice bg-ice-soft p-4"><span className="ic"><PlayCircle size={20} aria-hidden /></span><div className="flex-1"><div className="font-bold text-navy">Atendimento em andamento — OS {a.osNumero}</div><div className="text-[13px] text-text-2">{a.clienteNome} · desde {fmtHora(a.checkinEm)}</div></div><ChevronRight aria-hidden /></Link>
       ))}
-      {prof.vinculo === "proprio" && (
-        prof.veiculoId ? (!checklist && doDia.length > 0 && <Aviso tom="atencao" titulo="Checklist do veículo pendente">Faça o checklist de saída do seu veículo antes do primeiro atendimento. <Link href={`/veiculos/${prof.veiculoId}/checklist`} className="font-semibold underline">Fazer agora</Link></Aviso>)
-          : <Aviso tom="info">Você não tem veículo designado. O escritório é avisado automaticamente se você iniciar um atendimento.</Aviso>
-      )}
+      {prof.vinculo === "proprio" && (checklist ? (
+        <Link href="/checklist-hoje" className="card flex items-center gap-3 p-4"><span className="ic ok"><CheckCircle2 size={20} aria-hidden /></span><div className="flex-1"><div className="font-bold text-navy">Checklist do veículo de hoje feito</div><div className="text-[13px] text-text-2">{checklist.placa ?? checklist.identificacao} · às {fmtHora(checklist.r.realizadoEm)} · check-in liberado</div></div><ChevronRight className="text-muted" aria-hidden /></Link>
+      ) : (
+        <div className="card border-warn/40 p-4">
+          <div className="flex items-start gap-3"><span className="ic warn"><ClipboardCheck size={20} aria-hidden /></span><div className="flex-1"><div className="font-bold text-navy">Antes de sair: checklist do veículo</div><div className="text-[13px] text-text-2">Escolha a placa de hoje e confira os itens. O check-in das visitas só libera depois do checklist.</div></div></div>
+          <Link href="/checklist-hoje" className="btn btn-primary btn-lg mt-3 w-full"><ClipboardCheck size={18} aria-hidden />Fazer checklist de hoje</Link>
+        </div>
+      ))}
       <section>
         <h2 className="mb-2 text-[16px] font-semibold text-navy">Visitas de hoje</h2>
         {doDia.length === 0 ? <div className="card"><Vazio titulo="Nenhuma visita hoje">Quando o escritório agendar, ela aparece aqui.</Vazio></div> : (

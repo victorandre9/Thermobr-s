@@ -6,6 +6,8 @@ import { exigirCtx } from "@/server/auth/sessao";
 import { pode } from "@/server/auth/contexto";
 import { obterVisitaTecnico } from "@/server/services/execucao";
 import { prontidaoVisita } from "@/server/services/prontidao";
+import { checklistDoDia } from "@/server/services/veiculos";
+import { obterConfig } from "@/server/services/config";
 import { minhaCustodia } from "@/server/services/materiais";
 import { ActionForm, Enviar } from "@/components/action-form";
 import { Aviso, Badge, Card, Campo, Qtd } from "@/components/ui";
@@ -21,7 +23,8 @@ export default async function Visita({ params }: { params: Promise<{ id: string 
   const ctx = await exigirCtx();
   const { id } = await params;
   const d = await obterVisitaTecnico(db, ctx, id);
-  const [pr, cust] = await Promise.all([prontidaoVisita(db, ctx, id), ctx.profissional ? minhaCustodia(db, ctx) : Promise.resolve(null)]);
+  const [pr, cust, ckHoje, cfg] = await Promise.all([prontidaoVisita(db, ctx, id), ctx.profissional ? minhaCustodia(db, ctx) : Promise.resolve(null), checklistDoDia(db, ctx), obterConfig(db, ctx.empresaId)]);
+  const precisaChecklist = ctx.profissional?.vinculo === "proprio" && !ckHoje && cfg.veiculos.checklistSaidaObrigatorio;
   const v = d.visita;
   const minhaPart = d.participacoes.find((p) => p.profissionalId === ctx.profissional?.id);
   const H = <input type="hidden" name="visitaId" value={id} />;
@@ -54,11 +57,13 @@ export default async function Visita({ params }: { params: Promise<{ id: string 
             <span><b>{i.rotulo}:</b> {i.detalhe}{i.proximaAcao && <span className="text-muted"> → {i.proximaAcao} ({i.responsavel})</span>}</span>
           </li>
         ))}</ul>
-        {ctx.profissional?.vinculo === "proprio" && ctx.profissional.veiculoId && pr.itens.some((i) => i.codigo === `veiculo:${ctx.profissional!.id}` && i.status !== "ok") && <Link className="btn btn-ghost mt-3" href={`/veiculos/${ctx.profissional.veiculoId}/checklist`}>Fazer checklist do veículo</Link>}
+        {ctx.profissional?.vinculo === "proprio" && pr.itens.some((i) => i.codigo === `veiculo:${ctx.profissional!.id}` && i.status !== "ok") && <Link className="btn btn-ghost mt-3" href="/checklist-hoje">Fazer checklist de hoje</Link>}
       </Card>}
 
       {v.situacao === "agendada" && (
-        d.podeConduzir
+        d.podeConduzir && precisaChecklist
+          ? <div className="card p-4 text-center"><p className="mb-3 text-[14px] font-semibold text-navy">Faça o checklist do veículo de hoje para liberar o check-in.</p><Link href="/checklist-hoje" className="btn btn-primary btn-lg w-full">Fazer checklist de hoje</Link></div>
+          : d.podeConduzir
           ? <ActionForm action={A.acaoCheckin}>{H}<Enviar className="btn btn-ok btn-lg w-full" pendente="Registrando…"><PlayCircle size={20} />Iniciar atendimento (check-in)</Enviar><p className="hint mt-1 text-center">Horário registrado pelo servidor. Toques repetidos não duplicam.</p></ActionForm>
           : <Aviso tom="info">O responsável pela visita inicia o atendimento. Registre sua chegada quando estiver no local.</Aviso>
       )}

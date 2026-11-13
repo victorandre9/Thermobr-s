@@ -128,6 +128,14 @@ Princípios de consistência:
 - [x] Indicadores do gestor clicáveis
 - [x] Robô de cliques: 5 perfis, ~430 páginas, 0 erro/acesso negado; fluxos financeiros de ponta a ponta
 
+## Checklist diário do veículo (equipe própria)
+- [x] Botão "Fazer checklist de hoje" na tela inicial do técnico próprio (autônomo não tem)
+- [x] Técnico escolhe a placa do dia; a placa vira o veículo designado (auditado)
+- [x] Modelo "Checklist diário — veículo leve" (21 itens essenciais, criticidade, foto obrigatória quando irregular)
+- [x] Validade até o fim do dia (São Paulo); check-in bloqueado sem checklist do dia
+- [x] Irregularidade crítica continua bloqueando o veículo até liberação do gestor
+- [x] Testes: bloqueio sem checklist, escolha de placa, reutilização no dia, check-in com veículo do dia
+
 ## Situação (fim desta sessão)
 - Todas as fases e itens do aditivo implementados com persistência, telas e testes (44 testes automatizados passando) e validação manual desktop/celular com dados demo.
 - Pendências externas permanecem (ver seção acima): logo em arquivo, API de pedidos Treeunfe, credenciais Neon/bucket/domínio, política de delegação financeira e estrutura real da equipe.

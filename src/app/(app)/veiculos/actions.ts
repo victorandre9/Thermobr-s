@@ -29,11 +29,12 @@ export async function acaoChecklistVeiculo(_: EstadoAcao, fd: FormData) {
     const fotosPorItem = Object.fromEntries(itens.map((i) => [i, fd.getAll(`f_${i}`).filter((f): f is File => f instanceof File && f.size > 0)]));
     const r = await V.responderChecklistVeiculo(tx, ctx, id, (txt(fd, "tipo") ?? "veiculo_saida") as "veiculo_saida", int(fd, "km"),
       itens.map((i) => ({ itemId: i, resultado: (txt(fd, `r_${i}`) ?? "conforme") as "conforme", observacao: txt(fd, `o_${i}`), fotos: fotosPorItem[i].length })), txt(fd, "observacoes"), txt(fd, "_idem"), fd.get("forcar") === "1");
-    if (r.reutilizado) return { msg: "Já existe checklist válido deste veículo neste turno (reutilizado).", redirecionar: `/veiculos/${id}` };
+    const destino = txt(fd, "destino") === "inicio" ? "/" : `/veiculos/${id}`;
+    if (r.reutilizado) return { msg: "Já existe checklist válido deste veículo hoje (reutilizado).", redirecionar: destino };
     for (const [itemId, files] of Object.entries(fotosPorItem)) {
       const riId = r.itensIds?.[itemId]; if (!riId) continue;
       for (const f of files) { const a = await registrarAnexo(tx, ctx, { entidadeTipo: "checklist_item", entidadeId: riId, categoria: "foto", nomeArquivo: f.name, mime: f.type, tamanhoBytes: f.size }); await getStorage().salvar(a.chaveStorage, Buffer.from(await f.arrayBuffer()), a.mime); }
     }
-    return { msg: `Checklist registrado${r.pendencias.length ? ` com ${r.pendencias.length} irregularidade(s) enviada(s) para tratativa` : ""}.`, redirecionar: `/veiculos/${id}` };
-  }, [`/veiculos/${id}`, "/"]);
+    return { msg: `Checklist registrado${r.pendencias.length ? ` com ${r.pendencias.length} irregularidade(s) enviada(s) para tratativa` : ""}. Check-in liberado.`, redirecionar: destino };
+  }, [`/veiculos/${id}`, "/", "/checklist-hoje"]);
 }

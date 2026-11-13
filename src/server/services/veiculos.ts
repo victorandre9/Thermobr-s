@@ -12,15 +12,36 @@ import { auditar } from "./auditoria";
 import { garantirPendencia } from "./pendencias";
 import { obterConfig } from "./config";
 import { criarObrigacao } from "./financeiro";
-import { diffDias, hojeSP, somarDias } from "@/lib/datas";
+import { diffDias, hojeSP, somarDias, intervaloDiaSP } from "@/lib/datas";
 
 const CRIT_PRIORIDADE: Record<string, string> = { baixa: "baixa", media: "media", alta: "alta", critica: "critica" };
 
-/** Elegibilidade ao checklist: gestor/administrativo autorizado (empresa) OU técnico da equipe própria designado ao veículo. */
-export function podeChecklistVeiculo(ctx: Ctx, veiculoId: string): boolean {
+/**
+ * Elegibilidade ao checklist: gestor/administrativo autorizado (empresa) OU técnico da equipe própria.
+ * O técnico próprio escolhe a placa do dia no checklist (vira o veículo designado). Autônomo: nunca.
+ */
+export function podeChecklistVeiculo(ctx: Ctx, _veiculoId: string): boolean {
   if (ctx.profissional?.vinculo === "autonomo" && !pode(ctx, "veiculo.checklist", "empresa")) return false;
   if (pode(ctx, "veiculo.checklist", "empresa")) return true;
-  return pode(ctx, "veiculo.checklist", "proprio") && ctx.profissional?.vinculo === "proprio" && ctx.profissional.veiculoId === veiculoId;
+  return pode(ctx, "veiculo.checklist", "proprio") && ctx.profissional?.vinculo === "proprio";
+}
+
+/** Checklist de saída feito HOJE (data de São Paulo) pelo técnico próprio, ainda válido. Libera o check-in. */
+export async function checklistDoDia(dbx: DBOrTx, ctx: Pick<Ctx, "profissional">) {
+  const prof = ctx.profissional;
+  if (!prof || prof.vinculo !== "proprio") return null;
+  const [ini] = intervaloDiaSP(hojeSP());
+  const [r] = await dbx.select({ r: checklistResposta, identificacao: veiculo.identificacao, placa: veiculo.placa }).from(checklistResposta).innerJoin(veiculo, eq(veiculo.id, checklistResposta.veiculoId))
+    .where(and(eq(checklistResposta.profissionalId, prof.id), eq(checklistResposta.tipo, "veiculo_saida"), sql`${qc(checklistResposta.realizadoEm)} >= ${ini.toISOString()}`, sql`${qc(checklistResposta.validoAte)} > now()`))
+    .orderBy(desc(checklistResposta.realizadoEm)).limit(1);
+  return r ?? null;
+}
+
+/** Veículos ativos para o técnico escolher a placa do dia. */
+export async function veiculosParaChecklist(dbx: DBOrTx, ctx: Ctx) {
+  if (!temAcessoChecklistVeiculo(ctx)) throw new ErroAcesso("Técnico autônomo não possui checklist de veículo.");
+  return dbx.select({ id: veiculo.id, identificacao: veiculo.identificacao, placa: veiculo.placa, modelo: veiculo.modelo, odometroKm: veiculo.odometroKm }).from(veiculo)
+    .where(and(eq(veiculo.empresaId, ctx.empresaId), eq(veiculo.ativo, true))).orderBy(asc(veiculo.identificacao));
 }
 /** Menu/endpoint de checklist de veículo existe para o usuário? (autônomo: não). */
 export function temAcessoChecklistVeiculo(ctx: Ctx): boolean {
@@ -127,6 +148,7 @@ export async function responderChecklistVeiculo(tx: DBOrTx, ctx: Ctx, veiculoId:
   if (!podeChecklistVeiculo(ctx, veiculoId)) throw new ErroAcesso(ctx.profissional?.vinculo === "autonomo" ? "Técnico autônomo não possui checklist de veículo." : "Você não está designado a este veículo.");
   const [v] = await tx.select().from(veiculo).where(and(eq(veiculo.id, veiculoId), eq(veiculo.empresaId, ctx.empresaId)));
   if (!v) throw new ErroAcesso();
+  if (!v.ativo) throw new ErroNegocio("Veículo inativo. Escolha outra placa.");
   if (!forcarNovo) { const val = await checklistValido(tx, veiculoId, tipo, { profissionalId: ctx.profissional?.id ?? null, usuarioId: ctx.usuarioId }); if (val) return { resposta: val.r, reutilizado: true, pendencias: [] as string[] }; }
   if (chave) { const [ex] = await tx.select().from(checklistResposta).where(eq(checklistResposta.chaveIdempotencia, chave)); if (ex) return { resposta: ex, reutilizado: true, pendencias: [] }; }
   const { modelo, itens } = await modeloChecklist(tx, ctx, tipo);
@@ -141,7 +163,7 @@ export async function responderChecklistVeiculo(tx: DBOrTx, ctx: Ctx, veiculoId:
     }
   }
   if (km !== null) await registrarOdometro(tx, ctx, veiculoId, km, "checklist");
-  const [resp] = await tx.insert(checklistResposta).values({ empresaId: ctx.empresaId, modeloId: modelo.id, tipo, veiculoId, profissionalId: ctx.profissional?.id ?? null, usuarioId: ctx.usuarioId, km, modeloVersao: modelo.versao, validoAte: sql`now() + make_interval(hours => ${modelo.validadeHoras})` as unknown as Date, observacoes: observacoes ?? null, chaveIdempotencia: chave ?? null }).returning();
+  const [resp] = await tx.insert(checklistResposta).values({ empresaId: ctx.empresaId, modeloId: modelo.id, tipo, veiculoId, profissionalId: ctx.profissional?.id ?? null, usuarioId: ctx.usuarioId, km, modeloVersao: modelo.versao, validoAte: sql`least(now() + make_interval(hours => ${modelo.validadeHoras}), ${intervaloDiaSP(hojeSP())[1].toISOString()}::timestamptz)` as unknown as Date, observacoes: observacoes ?? null, chaveIdempotencia: chave ?? null }).returning();
   const pendencias: string[] = [];
   const itensIds: Record<string, string> = {};
   for (const r of respostas) {
@@ -153,6 +175,13 @@ export async function responderChecklistVeiculo(tx: DBOrTx, ctx: Ctx, veiculoId:
     }
     const [ri] = await tx.insert(checklistRespostaItem).values({ respostaId: resp.id, itemId: it.id, descricao: it.descricao, criticidade: it.criticidade, exigeFotoIrregular: it.exigeFotoIrregular, resultado: r.resultado, observacao: r.observacao ?? null, pendenciaId }).returning();
     itensIds[it.id] = ri.id;
+  }
+  // Técnico próprio: a placa escolhida no checklist de saída passa a ser o veículo do dia.
+  const prof = ctx.profissional;
+  if (tipo === "veiculo_saida" && prof?.vinculo === "proprio" && prof.veiculoId !== veiculoId) {
+    await tx.update(profissional).set({ veiculoId }).where(eq(profissional.id, prof.id));
+    await auditar(tx, ctx, { acao: "veiculo.designacao_por_checklist", entidadeTipo: "profissional", entidadeId: prof.id, antes: { veiculoId: prof.veiculoId }, depois: { veiculoId } });
+    prof.veiculoId = veiculoId;
   }
   await auditar(tx, ctx, { acao: `checklist.${tipo}`, entidadeTipo: "veiculo", entidadeId: veiculoId, depois: { respostaId: resp.id, km, irregulares: pendencias.length } });
   return { resposta: resp, reutilizado: false, pendencias, itensIds };

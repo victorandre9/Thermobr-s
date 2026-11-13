@@ -58,12 +58,38 @@ export async function garantirCategorias(tx: DBOrTx, empresaId: string) {
   await tx.insert(categoriaFinanceira).values(CATEGORIAS.map((c) => ({ empresaId, ...c, restrita: c.restrita ?? false }))).onConflictDoNothing();
 }
 
+/**
+ * Checklist diário de veículo leve (feito pela manhã, antes do primeiro atendimento).
+ * Itens essenciais reunidos de modelos de inspeção de frota leve: documentos, itens de emergência,
+ * pneus, iluminação, freios, fluidos, visibilidade, segurança e carga. [descrição, criticidade, foto obrigatória se irregular]
+ */
+export const NOME_CHECKLIST_LEVE = "Checklist diário — veículo leve";
+export const ITENS_VEICULO_LEVE: ReadonlyArray<readonly [string, string, boolean]> = [
+  ["Documento do veículo (CRLV) e CNH do condutor válidos", "alta", false],
+  ["Pneus: calibragem, desgaste e sem cortes ou bolhas", "critica", true],
+  ["Estepe calibrado e em bom estado", "alta", true],
+  ["Macaco, chave de roda e triângulo no veículo", "alta", false],
+  ["Faróis (baixo e alto) e lanternas", "alta", true],
+  ["Setas, pisca-alerta, luz de freio e luz de ré", "critica", true],
+  ["Buzina funcionando", "media", false],
+  ["Freio de serviço e freio de mão", "critica", false],
+  ["Nível do óleo do motor", "alta", true],
+  ["Água / líquido de arrefecimento do radiador", "alta", false],
+  ["Fluido de freio no nível", "critica", false],
+  ["Limpador e esguicho do para-brisa", "media", false],
+  ["Para-brisa e vidros sem trincas", "alta", true],
+  ["Retrovisores (internos e externos) inteiros e ajustados", "alta", true],
+  ["Cintos de segurança funcionando", "critica", false],
+  ["Painel sem luz de alerta acesa", "alta", true],
+  ["Combustível suficiente para o dia", "media", false],
+  ["Lataria sem avarias novas", "baixa", true],
+  ["Carga, ferramentas e escada presas com segurança", "alta", true],
+  ["Extintor (se o veículo tiver) dentro da validade", "baixa", false],
+  ["Cabine limpa e organizada", "baixa", false],
+];
+
 const CHECKLISTS = [
-  { tipo: "veiculo_saida", nome: "Saída do veículo", validadeHoras: 12, itens: [
-    ["Pneus: calibragem e desgaste visual", "alta", true], ["Estepe, macaco e chave de roda", "media", false], ["Luzes (farol, lanterna, freio, setas)", "alta", true],
-    ["Avarias na lataria/vidros", "media", true], ["Nível de óleo e água (visual)", "media", false], ["Freios (percepção ao sair)", "critica", false],
-    ["Documentos do veículo", "media", false], ["Limpeza e organização da carga", "baixa", false],
-  ] },
+  { tipo: "veiculo_saida", nome: NOME_CHECKLIST_LEVE, validadeHoras: 14, itens: ITENS_VEICULO_LEVE },
   { tipo: "veiculo_retorno", nome: "Retorno do veículo", validadeHoras: 12, itens: [
     ["Avarias novas", "media", true], ["Pneus (visual)", "media", true], ["Ferramentas e materiais descarregados/conferidos", "media", false],
   ] },
@@ -78,6 +104,16 @@ export async function garantirChecklists(tx: DBOrTx, empresaId: string) {
     const [m] = await tx.insert(checklistModelo).values({ empresaId, tipo: c.tipo, nome: c.nome, validadeHoras: c.validadeHoras }).returning();
     if (c.itens.length) await tx.insert(checklistModeloItem).values(c.itens.map(([descricao, criticidade, exigeFotoIrregular], i) => ({ modeloId: m.id, ordem: i, descricao, criticidade, exigeFotoIrregular })));
   }
+}
+
+/** Atualiza (nova versão) o checklist de saída para o modelo diário de veículo leve, se ainda não estiver nele. Respostas antigas não mudam. */
+export async function garantirChecklistVeiculoLeve(tx: DBOrTx, empresaId: string) {
+  const [atual] = await tx.select().from(checklistModelo).where(and(eq(checklistModelo.empresaId, empresaId), eq(checklistModelo.tipo, "veiculo_saida"), eq(checklistModelo.ativo, true)));
+  if (atual?.nome === NOME_CHECKLIST_LEVE) return false;
+  if (atual) await tx.update(checklistModelo).set({ ativo: false }).where(eq(checklistModelo.id, atual.id));
+  const [m] = await tx.insert(checklistModelo).values({ empresaId, tipo: "veiculo_saida", nome: NOME_CHECKLIST_LEVE, validadeHoras: 14, versao: (atual?.versao ?? 0) + 1 }).returning();
+  await tx.insert(checklistModeloItem).values(ITENS_VEICULO_LEVE.map(([descricao, criticidade, exigeFotoIrregular], i) => ({ modeloId: m.id, ordem: i, descricao, criticidade, exigeFotoIrregular })));
+  return true;
 }
 
 export async function garantirVagas(tx: DBOrTx, empresaId: string) {
