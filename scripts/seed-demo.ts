@@ -21,6 +21,7 @@ import { gerarMensalidades, gerarRecebivelOS, registrarBaixa, criarObrigacao, de
 import { definirValorAutonomo } from "../src/server/services/autonomos";
 import { ingerirPedido } from "../src/server/services/pedidos";
 import { hojeSP, instanteSP, somarDias } from "../src/lib/datas";
+import { popularMassa } from "./seed-massa";
 
 if (process.env.APP_ENV === "production") { console.error("Seed de demonstração bloqueado em produção."); process.exit(1); }
 const SENHA = process.env.DEMO_SENHA ?? "Demo-thermo-2026";
@@ -31,7 +32,7 @@ const tx = <R>(fn: (t: T) => Promise<R>) => db.transaction(fn);
 
 async function main() {
   const [ja] = await db.select().from(s.empresa).where(eq(s.empresa.nome, "Thermobrás (DEMONSTRAÇÃO)"));
-  if (ja) { console.log("Demonstração já existe. Para recriar, use um banco vazio."); await pool.end(); return; }
+  if (ja) { console.log("Demonstração base já existe."); await popularMassa(db, ja.id); await pool.end(); return; }
   const [emp] = await db.insert(s.empresa).values({ nome: "Thermobrás (DEMONSTRAÇÃO)", config: { financeiro: { politicaDelegacaoDefinida: false } } }).returning();
   await tx((t) => garantirEstrutura(t, emp.id));
   const hash = await hashSenha(SENHA);
@@ -167,6 +168,7 @@ async function main() {
   console.log("\nDemonstração criada (dados FICTÍCIOS). Senha de todas as contas demo:", SENHA);
   for (const e of ["gestor", "socio", "admin", "financeiro", "autonomo.a", "autonomo.b", "autonomo.c", "proprio1", "proprio2"]) console.log(`  ${e}@demo.thermobras.local`);
   void aut3; void prop2; void caixa;
+  await popularMassa(db, emp.id);
   await pool.end();
 }
 main().catch(async (e) => { console.error(e); await pool.end(); process.exit(1); });
