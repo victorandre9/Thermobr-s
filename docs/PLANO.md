@@ -120,6 +120,14 @@ Princípios de consistência:
 - [x] Teste: indicadores batem com listas de destino e respeitam permissões
 - [x] Massa de dados de teste fictícia (`scripts/seed-massa.ts`)
 
+## Auditoria de perfis e navegação
+- [x] Menu por foco: financeiro sem Pendências (todas operacionais), Materiais e lista operacional de OS; ganha "OS para cobrar"
+- [x] OS no financeiro: sem visitas/materiais; abre direto na cobrança
+- [x] Cliente: nome clicável em contas a receber, cobrança, detalhe da conta e tela inicial → cadastro com "Financeiro do cliente"
+- [x] Contas a receber/pagar: filtro "A vencer"; filtro por cliente com "limpar"
+- [x] Indicadores do gestor clicáveis
+- [x] Robô de cliques: 5 perfis, ~430 páginas, 0 erro/acesso negado; fluxos financeiros de ponta a ponta
+
 ## Situação (fim desta sessão)
 - Todas as fases e itens do aditivo implementados com persistência, telas e testes (44 testes automatizados passando) e validação manual desktop/celular com dados demo.
 - Pendências externas permanecem (ver seção acima): logo em arquivo, API de pedidos Treeunfe, credenciais Neon/bucket/domínio, política de delegação financeira e estrutura real da equipe.

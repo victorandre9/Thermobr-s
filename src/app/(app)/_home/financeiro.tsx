@@ -38,7 +38,7 @@ export async function HomeFinanceiro({ ctx, sp }: { ctx: Ctx; sp: SP }) {
             {cob.lista.length === 0 ? <p className="border-t border-white px-4 py-3 text-[13px] text-muted">Nenhuma cobrança vencida.</p> : (
               <ul className="border-t border-white">{cob.lista.map((c) => (
                 <li key={c.clienteId} className="linha-acao">
-                  <div className="min-w-0 flex-1"><b className="text-[13.5px] text-navy">{c.clienteNome}</b>
+                  <div className="min-w-0 flex-1"><Link href={`/clientes/${c.clienteId}`} className="text-[13.5px] font-bold text-navy hover:underline">{c.clienteNome}</Link>
                     <div className="text-[12px] text-muted">Venc. desde {fmtDia(c.maisAntigo)} · último contato {c.ultimoContato ? fmtDataHora(c.ultimoContato) : "nenhum"}{c.proximaAcaoEm ? ` · próx. ação ${fmtDia(c.proximaAcaoEm)}` : ""}</div></div>
                   <b className="num text-[13.5px] text-bad"><Dinheiro v={Number(c.totalVencido)} /></b>
                   <Link href={`/financeiro/receber?situacao=vencidas&clienteId=${c.clienteId}`} className="btn btn-ghost btn-sm">Abrir</Link>

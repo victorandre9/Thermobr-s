@@ -378,7 +378,7 @@ export function situacaoParcela(p: { valorCentavos: number; cancelada: boolean; 
   return { codigo: vencida ? "vencida" : parcial ? "parcial" : "a_vencer", rotulo: rot, vencida, parcial };
 }
 
-export interface FiltroParcelas { natureza: "receber" | "pagar"; situacao?: "abertas" | "vencidas" | "quitadas" | "todas" | "hoje"; ate?: string; de?: string; clienteId?: string; aprovacao?: string; categoriaId?: string; limite?: number; offset?: number }
+export interface FiltroParcelas { natureza: "receber" | "pagar"; situacao?: "abertas" | "vencidas" | "a_vencer" | "quitadas" | "todas" | "hoje"; ate?: string; de?: string; clienteId?: string; aprovacao?: string; categoriaId?: string; limite?: number; offset?: number }
 
 export function condicoesParcelas(ctx: Ctx, f: FiltroParcelas): SQL[] {
   exigir(ctx, "financeiro.ver");
@@ -387,9 +387,10 @@ export function condicoesParcelas(ctx: Ctx, f: FiltroParcelas): SQL[] {
   if (!pode(ctx, "financeiro.restrito.ver")) c.push(eq(categoriaFinanceira.restrita, false));
   const sit = f.situacao ?? "abertas";
   if (sit !== "todas") c.push(eq(parcela.cancelada, false), ne(obrigacao.situacaoAprovacao, "cancelada"), ne(obrigacao.situacaoAprovacao, "rejeitada"));
-  if (sit === "abertas" || sit === "vencidas" || sit === "hoje") c.push(sql`${saldoParcelaSQL} > 0`);
+  if (sit === "abertas" || sit === "vencidas" || sit === "hoje" || sit === "a_vencer") c.push(sql`${saldoParcelaSQL} > 0`);
   if (sit === "vencidas") c.push(sql`${qc(parcela.vencimento)} < ${hoje}`);
   if (sit === "hoje") c.push(eq(parcela.vencimento, hoje));
+  if (sit === "a_vencer") c.push(sql`${qc(parcela.vencimento)} >= ${hoje}`);
   if (sit === "quitadas") c.push(sql`${saldoParcelaSQL} <= 0`);
   if (f.ate) c.push(lte(parcela.vencimento, f.ate));
   if (f.de) c.push(sql`${qc(parcela.vencimento)} >= ${f.de}`);

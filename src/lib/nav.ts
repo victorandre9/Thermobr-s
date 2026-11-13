@@ -18,18 +18,21 @@ export function montarNav(ctx: Ctx): { itens: ItemNav[]; tecnico: boolean } {
     return { itens: i, tecnico };
   }
   const op = "Operação";
+  // Foco do perfil: só mostra módulos operacionais a quem trabalha na operação (agenda/OS).
+  const operacional = pode(ctx, "agenda.ver", "empresa") || pode(ctx, "os.gerenciar");
   if (pode(ctx, "pedido.ver")) i.push({ href: "/pedidos", rotulo: "Pedidos", icone: "inbox", grupo: op });
-  if (pode(ctx, "os.ver", "empresa")) i.push({ href: "/os", rotulo: "Ordens de serviço", icone: "clipboard", grupo: op });
+  if (pode(ctx, "os.ver", "empresa") && operacional) i.push({ href: "/os", rotulo: "Ordens de serviço", icone: "clipboard", grupo: op });
   if (pode(ctx, "agenda.ver", "empresa")) { i.push({ href: "/agenda", rotulo: "Agenda", icone: "calendar", grupo: op }); i.push({ href: "/visitas", rotulo: "Visitas", icone: "map", grupo: op }); }
-  if (pode(ctx, "pendencia.ver", "empresa")) i.push({ href: "/pendencias", rotulo: "Pendências", icone: "alert", grupo: op });
+  if (pode(ctx, "pendencia.ver", "empresa") && operacional) i.push({ href: "/pendencias", rotulo: "Pendências", icone: "alert", grupo: op });
   if (pode(ctx, "cliente.ver", "empresa")) i.push({ href: "/clientes", rotulo: "Clientes", icone: "users", grupo: op });
   if (pode(ctx, "contrato.ver")) i.push({ href: "/contratos", rotulo: "Contratos", icone: "file", grupo: op });
   const at = "Ativos";
   if (pode(ctx, "ferramenta.ver", "empresa")) i.push({ href: "/ferramentas", rotulo: "Ferramentas", icone: "wrench", grupo: at });
   if (pode(ctx, "veiculo.ver", "empresa")) i.push({ href: "/veiculos", rotulo: "Veículos", icone: "truck", grupo: at });
-  if (pode(ctx, "material.ver", "empresa")) i.push({ href: "/materiais", rotulo: "Materiais e peças", icone: "package", grupo: at });
+  if (pode(ctx, "material.ver", "empresa") && (pode(ctx, "material.gerenciar") || pode(ctx, "material.movimentar") || pode(ctx, "material.conferir"))) i.push({ href: "/materiais", rotulo: "Materiais e peças", icone: "package", grupo: at });
   if (ctx.profissional && pode(ctx, "material.informar", "proprio")) i.push({ href: "/materiais/minha-custodia", rotulo: "Minha custódia", icone: "package", grupo: at });
   const fi = "Financeiro";
+  if (!operacional && pode(ctx, "os.ver", "empresa") && pode(ctx, "os.valores.ver")) i.push({ href: "/os?situacao=para_cobrar", rotulo: "OS para cobrar", icone: "clipboard", grupo: fi });
   if (pode(ctx, "financeiro.ver")) { i.push({ href: "/financeiro/receber", rotulo: "Contas a receber", icone: "arrowDown", grupo: fi }); i.push({ href: "/financeiro/pagar", rotulo: "Contas a pagar", icone: "arrowUp", grupo: fi }); }
   if (pode(ctx, "financeiro.aprovar") || pode(ctx, "financeiro.baixa.confirmar")) i.push({ href: "/financeiro/aprovacoes", rotulo: "Aprovações e conferências", icone: "check", grupo: fi });
   if (pode(ctx, "financeiro.fluxo.ver")) i.push({ href: "/financeiro/caixa", rotulo: "Caixa e previsão", icone: "chart", grupo: fi });

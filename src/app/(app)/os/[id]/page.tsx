@@ -29,6 +29,7 @@ export default async function DetalheOS({ params }: { params: Promise<{ id: stri
   const d = await obterOS(db, ctx, id);
   const o = d.os;
   const gerenciar = pode(ctx, "os.gerenciar"); const agenda = pode(ctx, "agenda.gerenciar");
+  const operacional = pode(ctx, "agenda.ver", "empresa") || gerenciar;
   const [conc, posicoes, mats, autonomos, relatorios, evid, anexosOS, prontidoes, hist, obrigs, usuarios] = await Promise.all([
     pode(ctx, "material.ver", "empresa") ? conciliacaoOS(db, ctx, id) : Promise.resolve([]),
     pode(ctx, "material.movimentar") ? listarPosicoes(db, ctx) : Promise.resolve([]),
@@ -46,7 +47,7 @@ export default async function DetalheOS({ params }: { params: Promise<{ id: stri
   const H = <input type="hidden" name="osId" value={id} />;
   return (
     <div className="space-y-5">
-      <PageHeader voltar={{ href: "/os", rotulo: "Ordens de serviço" }} titulo={`OS #${o.numero} — ${d.cliente.nome}`}
+      <PageHeader voltar={operacional ? { href: "/os", rotulo: "Ordens de serviço" } : { href: "/os?situacao=para_cobrar", rotulo: "OS para cobrar" }} titulo={`OS #${o.numero} — ${d.cliente.nome}`}
         subtitulo={<span className="flex flex-wrap items-center gap-2"><EtapaOS e={o.etapa} /><Prioridade p={o.prioridade} /><Badge tom="neutro" icone={false}>{rotulo(OS_ORIGENS, o.origem)}</Badge><Badge tom={o.situacaoComercial === "aprovada" ? "ok" : "atencao"}>{rotulo(SITUACAO_COMERCIAL, o.situacaoComercial)}</Badge>{o.demo && <Badge tom="neutro" icone={false}>demonstração</Badge>}</span>}
         acoes={<>
           {gerenciar && o.situacaoComercial === "rascunho" && <ActionForm action={A.acaoAprovarOS}>{H}<Enviar className="btn btn-ok">Aprovar serviço</Enviar></ActionForm>}
@@ -100,7 +101,7 @@ export default async function DetalheOS({ params }: { params: Promise<{ id: stri
             )}
           </Card>
 
-          <Card titulo="Visitas" pad={false}>
+          {operacional && <Card titulo="Visitas" pad={false}>
             {d.visitas.length === 0 ? <Vazio titulo="Nenhuma visita">Crie uma visita para programar o atendimento.</Vazio> : (
               <ul className="divide-y divide-line">{d.visitas.map((v) => {
                 const pr = prontidoes.find((p) => p.id === v.id)?.p;
@@ -122,7 +123,7 @@ export default async function DetalheOS({ params }: { params: Promise<{ id: stri
                 );
               })}</ul>
             )}
-          </Card>
+          </Card>}
 
           <Card titulo="Serviços e peças">
             {d.itens.length === 0 ? <p className="text-[13px] text-muted">Nenhum item.</p> : (
@@ -147,7 +148,7 @@ export default async function DetalheOS({ params }: { params: Promise<{ id: stri
             )}
           </Card>
 
-          {pode(ctx, "material.ver", "empresa") && (
+          {operacional && pode(ctx, "material.ver", "empresa") && (
             <Card titulo="Materiais da OS — conciliação">
               {conc.length === 0 ? <p className="text-[13px] text-muted">Nenhum material previsto ou movimentado.</p> : (
                 <div className="tbl-wrap"><table className="tbl"><thead><tr><th>Material</th><th>Previsto</th><th>Reservado</th><th>Entregue</th><th>Consumo inf. / validado</th><th>Devol. inf. / conferida</th><th>Perdas</th><th>Custódia</th><th>A localizar</th></tr></thead>
@@ -183,7 +184,7 @@ export default async function DetalheOS({ params }: { params: Promise<{ id: stri
 
         <div className="space-y-5">
           {pode(ctx, "financeiro.ver") && pode(ctx, "os.valores.ver") && (
-            <Card titulo="Cobrança">
+            <div id="cobranca" className="scroll-mt-20"><Card titulo="Cobrança">
               {obrigs.length === 0 ? <p className="text-[13px] text-muted">{o.origem === "avulso" ? "Nenhuma conta a receber gerada." : "Origem sem cobrança automática: visita de contrato e retorno não geram nova venda. Apenas extras aprovados podem ser cobrados."}</p> : (
                 <ul className="space-y-1 text-[13px]">{obrigs.map((ob) => <li key={ob.id}><Link href={`/financeiro/obrigacoes/${ob.id}`} className="font-semibold text-ice-strong hover:underline">{ob.descricao}</Link> · <Dinheiro v={ob.valorBrutoCentavos - ob.descontoCentavos} /> · {rotulo(OBRIGACAO_APROVACAO, ob.situacaoAprovacao)}</li>)}</ul>
               )}
@@ -197,7 +198,7 @@ export default async function DetalheOS({ params }: { params: Promise<{ id: stri
                   <Enviar className="btn btn-primary btn-sm">Gerar cobrança</Enviar>
                 </ActionForm>
               )}
-            </Card>
+            </Card></div>
           )}
           {pode(ctx, "autonomo.valores.ver", "empresa") && (
             <Card titulo="Remuneração de autônomos">

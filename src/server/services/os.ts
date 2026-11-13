@@ -4,6 +4,7 @@ import type { DBOrTx } from "../db";
 import {
   agendaReserva, cliente, clienteContato, clienteLocal, contador, contrato, equipamento, ordemServico, osEquipamento, osItem,
   pedidoExterno, profissional, usuario, visita, visitaExecucao, autonomoServico, pendencia,
+  obrigacao,
 } from "../db/schema";
 import { type Ctx, exigir, pode } from "../auth/contexto";
 import { ErroAcesso, ErroNegocio } from "../erros";
@@ -227,7 +228,7 @@ export async function recalcularEtapa(tx: DBOrTx, osId: string): Promise<OsEtapa
 }
 
 // ---------------------------------------------------------------- consultas
-export interface FiltroOS { etapa?: string; origem?: string; clienteId?: string; profissionalId?: string; busca?: string; semResponsavel?: boolean; materialPendente?: boolean; conferenciaPendente?: boolean; limite?: number; offset?: number; ids?: string[] }
+export interface FiltroOS { etapa?: string; origem?: string; clienteId?: string; profissionalId?: string; busca?: string; semResponsavel?: boolean; materialPendente?: boolean; conferenciaPendente?: boolean; cobranca?: "pendente" | "gerada"; limite?: number; offset?: number; ids?: string[] }
 
 export function condicoesOS(ctx: Ctx, f: FiltroOS): SQL[] {
   const conds: SQL[] = [eq(ordemServico.empresaId, ctx.empresaId)];
@@ -246,6 +247,11 @@ export function condicoesOS(ctx: Ctx, f: FiltroOS): SQL[] {
   if (f.semResponsavel) conds.push(sql`${qc(ordemServico.etapa)} not in ('encerrada','cancelada') and not exists (select 1 from ${visita} v join ${agendaReserva} ar on ar.visita_id = v.id and ar.ativo where v.os_id = ${qc(ordemServico.id)} and v.situacao <> 'cancelada')`);
   if (f.materialPendente) conds.push(and(eq(ordemServico.situacaoMaterial, "pendente"), sql`${qc(ordemServico.etapa)} not in ('encerrada','cancelada')`)!);
   if (f.conferenciaPendente) conds.push(eq(ordemServico.etapa, "servico_concluido"));
+  if (f.cobranca) {
+    const existe = sql`exists (select 1 from ${obrigacao} ob where ob.os_id = ${qc(ordemServico.id)} and ob.natureza = 'receber' and ob.situacao_aprovacao <> 'cancelada')`;
+    conds.push(sql`${qc(ordemServico.situacaoComercial)} = 'aprovada' and ${qc(ordemServico.etapa)} in ('servico_concluido','encerrada') and ${qc(ordemServico.origem)} <> 'contrato'`);
+    conds.push(f.cobranca === "gerada" ? existe : sql`not ${existe}`);
+  }
   if (f.ids) conds.push(inArray(ordemServico.id, f.ids.length ? f.ids : ["00000000-0000-0000-0000-000000000000"]));
   return conds;
 }
@@ -260,6 +266,7 @@ export async function listarOS(dbx: DBOrTx, ctx: Ctx, f: FiltroOS = {}) {
     clienteNome: cliente.nome, localNome: clienteLocal.nome, responsavelNome: usuario.nome,
     proximaVisita: sql<string | null>`(select min(v.inicio_previsto) from ${visita} v where v.os_id = ${qc(ordemServico.id)} and v.situacao = 'agendada')`,
     equipe: sql<string | null>`(select string_agg(distinct p.nome, ', ') from ${visita} v join ${agendaReserva} ar on ar.visita_id = v.id and ar.ativo join ${profissional} p on p.id = ar.profissional_id where v.os_id = ${qc(ordemServico.id)} and v.situacao in ('agendada','em_atendimento'))`,
+    temCobranca: sql<boolean>`exists (select 1 from ${obrigacao} ob where ob.os_id = ${qc(ordemServico.id)} and ob.natureza = 'receber' and ob.situacao_aprovacao <> 'cancelada')`,
     total: sql<number>`count(*) over()::int`,
   }).from(ordemServico)
     .innerJoin(cliente, eq(cliente.id, ordemServico.clienteId))

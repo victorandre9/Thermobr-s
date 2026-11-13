@@ -74,11 +74,11 @@ export async function HomeGestor({ ctx, sp }: { ctx: Ctx; sp: SP }) {
 
       <Secao titulo="Indicadores" sub="Últimos 30 dias, a partir dos registros" acao={pode(ctx, "relatorio.operacional") ? <Link href="/relatorios" className="btn btn-ghost btn-sm">Relatórios <ChevronRight size={14} /></Link> : undefined}>
         <div className="grid gap-3 lg:grid-cols-3">
-          {ind.agenda && <Card titulo="Cumprimento da agenda">
+          {ind.agenda && <Card titulo="Cumprimento da agenda" acoes={<Link href="/visitas?filtro=finalizadas" className="btn btn-ghost btn-sm">Ver</Link>}>
             {ind.agenda.finalizadas + ind.agenda.naoIniciadas === 0 ? <p className="text-[13px] text-muted">Sem visitas no período.</p> : <div className="text-[13.5px]"><p><b className="num text-[20px] text-navy">{ind.agenda.concluidas}</b> de {ind.agenda.finalizadas} visitas finalizadas foram concluídas.</p>{ind.agenda.naoIniciadas > 0 && <p className="text-warn">{ind.agenda.naoIniciadas} agendada(s) não iniciada(s) após o horário.</p>}</div>}
           </Card>}
-          {ind.motivos && <Card titulo="Retornos e motivos"><Barras dados={ind.motivos.map((m) => ({ rotulo: rotulo(MOTIVOS_RESULTADO, m.motivo), valor: m.n, tom: "warn" }))} vazio="Nenhum retorno registrado." /></Card>}
-          {ind.vencidosHist !== undefined && <Card titulo="Recebíveis vencidos (fim de mês)">{ind.vencidosHist ? <Barras dados={ind.vencidosHist.map((x) => ({ rotulo: fmtDia(x.mes), valor: x.valor, tom: "bad" }))} formato={formatBRL} /> : <p className="text-[13px] text-muted">Histórico insuficiente.</p>}</Card>}
+          {ind.motivos && <Card titulo="Retornos e motivos" acoes={<Link href="/visitas?filtro=nao_concluidas" className="btn btn-ghost btn-sm">Ver</Link>}><Barras dados={ind.motivos.map((m) => ({ rotulo: rotulo(MOTIVOS_RESULTADO, m.motivo), valor: m.n, tom: "warn" }))} vazio="Nenhum retorno registrado." /></Card>}
+          {ind.vencidosHist !== undefined && <Card titulo="Recebíveis vencidos (fim de mês)" acoes={<Link href="/financeiro/receber?situacao=vencidas" className="btn btn-ghost btn-sm">Ver</Link>}>{ind.vencidosHist ? <Barras dados={ind.vencidosHist.map((x) => ({ rotulo: fmtDia(x.mes), valor: x.valor, tom: "bad" }))} formato={formatBRL} /> : <p className="text-[13px] text-muted">Histórico insuficiente.</p>}</Card>}
         </div>
       </Secao>
     </div>

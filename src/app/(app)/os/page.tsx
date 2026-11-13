@@ -15,6 +15,7 @@ export default async function ListaOS({ searchParams }: { searchParams: Promise<
   const ctx = await exigirCtx();
   const sp = await searchParams;
   const offset = Number(sp.offset ?? 0);
+  if (!(pode(ctx, "agenda.ver", "empresa") || pode(ctx, "os.gerenciar"))) return <ListaOSFinanceiro sp={sp} offset={offset} />;
   const f = { etapa: sp.etapa ?? (sp.semResponsavel || sp.materialPendente || sp.conferenciaPendente ? undefined : "abertas"), origem: sp.origem, busca: sp.busca, semResponsavel: !!sp.semResponsavel, materialPendente: !!sp.materialPendente, conferenciaPendente: !!sp.conferenciaPendente, limite: 50, offset };
   const { rows, total } = await listarOS(db, ctx, f);
   const base = "/os?" + new URLSearchParams(Object.entries(sp).filter(([k, v]) => k !== "offset" && v) as [string, string][]).toString();
@@ -47,6 +48,41 @@ export default async function ListaOS({ searchParams }: { searchParams: Promise<
                 </tr>
               );
             })}</tbody>
+          </table></div>
+        )}
+        <Paginacao total={total} limite={50} offset={offset} base={base} />
+      </Card>
+    </div>
+  );
+}
+
+/** Visão do financeiro: só o que interessa para cobrar (sem equipe, material ou agenda). */
+async function ListaOSFinanceiro({ sp, offset }: { sp: Record<string, string | undefined>; offset: number }) {
+  const ctx = await exigirCtx();
+  const cobranca = sp.situacao === "cobradas" ? "gerada" : "pendente";
+  const { rows, total } = await listarOS(db, ctx, { cobranca, busca: sp.busca, limite: 50, offset });
+  const base = "/os?" + new URLSearchParams(Object.entries(sp).filter(([k, v]) => k !== "offset" && v) as [string, string][]).toString();
+  return (
+    <div>
+      <PageHeader titulo="OS para cobrar" subtitulo={`${total} OS concluída(s) ${cobranca === "pendente" ? "sem cobrança gerada" : "com cobrança gerada"} · OS de contrato entram na mensalidade`} />
+      <Filtros>
+        <ChipLink href="/os?situacao=para_cobrar" ativo={cobranca === "pendente"}>Sem cobrança</ChipLink>
+        <ChipLink href="/os?situacao=cobradas" ativo={cobranca === "gerada"}>Cobrança gerada</ChipLink>
+        <form action="/os" className="ml-auto flex gap-2"><input type="hidden" name="situacao" value={sp.situacao ?? "para_cobrar"} /><input name="busca" defaultValue={sp.busca} placeholder="Nº, cliente ou descrição" className="input w-56" aria-label="Buscar" /><button className="btn btn-ghost">Buscar</button></form>
+      </Filtros>
+      <Card pad={false}>
+        {rows.length === 0 ? <Vazio titulo={cobranca === "pendente" ? "Nenhuma OS aguardando cobrança" : "Nenhuma OS com cobrança"}>{cobranca === "pendente" ? "Todas as OS concluídas já têm cobrança gerada." : "Ajuste a busca."}</Vazio> : (
+          <div className="tbl-wrap"><table className="tbl">
+            <thead><tr><th>OS</th><th>Cliente</th><th>Situação</th><th>Desde</th><th></th></tr></thead>
+            <tbody>{rows.map((o) => (
+              <tr key={o.id}>
+                <td><Link href={`/os/${o.id}`} className="font-bold text-navy hover:underline">#{o.numero}</Link><div className="text-[12px] text-muted">{rotulo(OS_ORIGENS, o.origem)}</div></td>
+                <td><div className="font-medium">{o.clienteNome}</div><div className="max-w-xs truncate text-[12px] text-text-2">{o.descricao}</div></td>
+                <td><EtapaOS e={o.etapa} /></td>
+                <td className="text-[12.5px]">{fmtDataHora(o.etapaDesde)}</td>
+                <td><Link href={`/os/${o.id}#cobranca`} className="btn btn-ghost btn-sm">{o.temCobranca ? "Ver cobrança" : "Gerar cobrança"}</Link></td>
+              </tr>
+            ))}</tbody>
           </table></div>
         )}
         <Paginacao total={total} limite={50} offset={offset} base={base} />
