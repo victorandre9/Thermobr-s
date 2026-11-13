@@ -136,6 +136,14 @@ Princípios de consistência:
 - [x] Irregularidade crítica continua bloqueando o veículo até liberação do gestor
 - [x] Testes: bloqueio sem checklist, escolha de placa, reutilização no dia, check-in com veículo do dia
 
+## Indicadores e custos (cobertura das artes Mafra)
+- [x] Despesas e diárias: técnico próprio lança pelo celular com comprovante; gestor aprova; financeiro paga (categorias "Diárias de equipe" e "Reembolso a técnico")
+- [x] Despesa ligada à OS (técnico e lançamento do financeiro)
+- [x] Relatório 13 — Custos por técnico, OS e categoria
+- [x] Relatório 12 — Produtividade por técnico (agendadas x realizadas, cumprimento, tempo em campo, média) + card no painel do gestor
+- [x] Filtro de região na agenda e nas visitas (regiões dos técnicos + bairros dos clientes)
+- [ ] Localização (GPS) no check-in/check-out — aguardando autorização da Thermobrás (dado pessoal do funcionário)
+
 ## Situação (fim desta sessão)
 - Todas as fases e itens do aditivo implementados com persistência, telas e testes (44 testes automatizados passando) e validação manual desktop/celular com dados demo.
 - Pendências externas permanecem (ver seção acima): logo em arquivo, API de pedidos Treeunfe, credenciais Neon/bucket/domínio, política de delegação financeira e estrutura real da equipe.

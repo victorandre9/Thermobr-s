@@ -335,3 +335,49 @@ describe("Páginas iniciais por perfil", () => {
     if (av) expect(av.podeConfigurar).toBe(false);
   });
 });
+
+describe("Despesas, custos, produtividade e região", () => {
+  it("técnico próprio lança diária/reembolso (vai para aprovação); autônomo não; custos agrupam por técnico e OS", async () => {
+    const { lancarDespesaTecnico, minhasDespesas } = await import("@/server/services/despesas");
+    const { custosOperacionais } = await import("@/server/services/produtividade");
+    const { hojeSP } = await import("@/lib/datas");
+    const os = await tx((t) => criarOS(t, c.ctx.admin, { origem: "avulso", clienteId: c.cli.id, localId: c.local.id, descricao: "Custo", equipamentos: [], itens: [] }));
+    await expect(tx((t) => lancarDespesaTecnico(t, c.ctx.aut, { tipo: "diaria", descricao: "x", valorCentavos: 1000, data: hojeSP() }))).rejects.toBeInstanceOf(ErroAcesso);
+    await expect(tx((t) => lancarDespesaTecnico(t, c.ctx.prop, { tipo: "reembolso", descricao: "futuro", valorCentavos: 1000, data: "2999-01-01" }))).rejects.toBeInstanceOf(ErroNegocio);
+    const d = await tx((t) => lancarDespesaTecnico(t, c.ctx.prop, { tipo: "reembolso", descricao: "Estacionamento", valorCentavos: 2500, data: hojeSP(), osNumero: os.numero, chave: "k-desp-1" }));
+    expect(d.situacaoAprovacao).toBe("aguardando_aprovacao");
+    expect(d.osId).toBe(os.id);
+    const again = await tx((t) => lancarDespesaTecnico(t, c.ctx.prop, { tipo: "reembolso", descricao: "Estacionamento", valorCentavos: 2500, data: hojeSP(), chave: "k-desp-1" }));
+    expect(again.id).toBe(d.id); // idempotente
+    const minhas = await minhasDespesas(db, c.ctx.prop);
+    expect(minhas.find((x) => x.id === d.id)?.situacao).toBe("Aguardando aprovação do gestor");
+    const porTec = await custosOperacionais(db, c.ctx.gestor, hojeSP(), hojeSP(), "tecnico");
+    expect(porTec.linhas.find((l) => l.chave === c.prof.prop)?.valorCentavos).toBeGreaterThanOrEqual(2500);
+    const porOS = await custosOperacionais(db, c.ctx.gestor, hojeSP(), hojeSP(), "os");
+    expect(porOS.linhas.find((l) => l.chave === os.id)?.valorCentavos).toBe(2500);
+    await expect(custosOperacionais(db, c.ctx.admin, hojeSP(), hojeSP(), "tecnico")).rejects.toBeInstanceOf(ErroAcesso);
+  });
+  it("produtividade por técnico bate com as visitas; região filtra agenda e visitas", async () => {
+    const { produtividadeTecnicos } = await import("@/server/services/produtividade");
+    const { listarVisitas } = await import("@/server/services/visitas");
+    const { somarDias, hojeSP } = await import("@/lib/datas");
+    const de = somarDias(hojeSP(), -60), ate = somarDias(hojeSP(), 60);
+    const linhas = await produtividadeTecnicos(db, c.ctx.gestor, de, ate);
+    for (const l of linhas.filter((x) => x.agendadas > 0)) {
+      const v = await listarVisitas(db, c.ctx.gestor, { filtro: "todas", de, ate, profissionalId: l.profissionalId, limite: 1000 });
+      expect(l.agendadas).toBe(v.rows.filter((x) => x.situacao !== "cancelada" && x.inicio && x.inicio >= new Date(de) && x.inicio < new Date(somarDias(ate, 1))).length);
+      expect(l.concluidas).toBeLessThanOrEqual(l.finalizadas);
+    }
+    await expect(produtividadeTecnicos(db, c.ctx.fin, de, ate)).rejects.toBeInstanceOf(ErroAcesso);
+    await db.update(s.clienteLocal).set({ bairro: "Bairro Teste" }).where(eq(s.clienteLocal.id, c.local.id));
+    const todas = await listarVisitas(db, c.ctx.gestor, { filtro: "todas", limite: 1000 });
+    const reg = await listarVisitas(db, c.ctx.gestor, { filtro: "todas", regiao: "bairro teste", limite: 1000 });
+    const nenhuma = await listarVisitas(db, c.ctx.gestor, { filtro: "todas", regiao: "Lugar Nenhum", limite: 1000 });
+    expect(reg.total).toBeGreaterThan(0);
+    expect(reg.total).toBeLessThanOrEqual(todas.total);
+    expect(reg.rows.every((v) => v.bairro === "Bairro Teste")).toBe(true);
+    expect(nenhuma.total).toBe(0);
+    const { regioesConhecidas } = await import("@/server/services/visitas");
+    expect(await regioesConhecidas(db, c.ctx.gestor)).toContain("Bairro Teste");
+  });
+});

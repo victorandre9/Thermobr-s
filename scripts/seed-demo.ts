@@ -5,10 +5,12 @@
  */
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import * as s from "../src/server/db/schema";
 import { modeloChecklist, responderChecklistVeiculo } from "../src/server/services/veiculos";
-import { garantirEstrutura, garantirChecklistVeiculoLeve } from "../src/server/services/estrutura";
+import { garantirEstrutura, garantirChecklistVeiculoLeve, garantirCategorias } from "../src/server/services/estrutura";
+import { lancarDespesaTecnico } from "../src/server/services/despesas";
+import { decidirObrigacao } from "../src/server/services/financeiro";
 import { carregarCtx, type Ctx } from "../src/server/auth/contexto";
 import { hashSenha } from "../src/server/auth/senha";
 import { criarOS, aprovarComercialmente, conferirOS } from "../src/server/services/os";
@@ -33,7 +35,7 @@ const tx = <R>(fn: (t: T) => Promise<R>) => db.transaction(fn);
 
 async function main() {
   const [ja] = await db.select().from(s.empresa).where(eq(s.empresa.nome, "Thermobrás (DEMONSTRAÇÃO)"));
-  if (ja) { console.log("Demonstração base já existe."); await popularMassa(db, ja.id); if (await db.transaction((t) => garantirChecklistVeiculoLeve(t, ja.id))) console.log("Checklist de veículo leve atualizado."); await renomearDemonstrativo(); await pool.end(); return; }
+  if (ja) { console.log("Demonstração base já existe."); await popularMassa(db, ja.id); await despesasDemonstrativas(ja.id); if (await db.transaction((t) => garantirChecklistVeiculoLeve(t, ja.id))) console.log("Checklist de veículo leve atualizado."); await renomearDemonstrativo(); await pool.end(); return; }
   const [emp] = await db.insert(s.empresa).values({ nome: "Thermobrás (DEMONSTRAÇÃO)", config: { financeiro: { politicaDelegacaoDefinida: false } } }).returning();
   await tx((t) => garantirEstrutura(t, emp.id));
   const hash = await hashSenha(SENHA);
@@ -174,8 +176,28 @@ async function main() {
   for (const e of ["gestor", "socio", "admin", "financeiro", "autonomo.a", "autonomo.b", "autonomo.c", "proprio1", "proprio2"]) console.log(`  ${e}@demo.thermobras.local`);
   void aut3; void prop2; void caixa;
   await popularMassa(db, emp.id);
+  await despesasDemonstrativas(emp.id);
   await renomearDemonstrativo();
   await pool.end();
+}
+
+/** Diárias e reembolsos fictícios da equipe própria (uma vez): aguardando, aprovada e paga. */
+async function despesasDemonstrativas(empresaId: string) {
+  await db.transaction((t) => garantirCategorias(t, empresaId));
+  const [ja] = await db.select({ id: s.obrigacao.id }).from(s.obrigacao).where(and(eq(s.obrigacao.empresaId, empresaId), eq(s.obrigacao.origemTipo, "despesa_tecnico"))).limit(1);
+  if (ja) return;
+  const ctxDe = async (prefixo: string) => { const [u] = await db.select().from(s.usuario).where(and(eq(s.usuario.empresaId, empresaId), sql`${s.usuario.email} like ${prefixo + "@%"}`)); return (await carregarCtx(db, u.id)) as Ctx; };
+  const P1 = await ctxDe("proprio1"), P2 = await ctxDe("proprio2"), G = await ctxDe("gestor");
+  const [os] = await db.select({ numero: s.ordemServico.numero }).from(s.ordemServico).where(and(eq(s.ordemServico.empresaId, empresaId), eq(s.ordemServico.etapa, "encerrada"))).limit(1);
+  const [banco] = await db.select().from(s.contaFinanceira).where(eq(s.contaFinanceira.empresaId, empresaId)).limit(1);
+  const d1 = await db.transaction((t) => lancarDespesaTecnico(t, P1, { tipo: "reembolso", descricao: "Estacionamento no atendimento (fictício)", valorCentavos: 1800, data: somarDias(hojeSP(), -3), osNumero: os?.numero ?? null }));
+  const d2 = await db.transaction((t) => lancarDespesaTecnico(t, P1, { tipo: "diaria", descricao: "Atendimento fora da cidade (fictício)", valorCentavos: 8000, data: somarDias(hojeSP(), -2), osNumero: os?.numero ?? null }));
+  await db.transaction((t) => lancarDespesaTecnico(t, P2, { tipo: "reembolso", descricao: "Almoço em atendimento longo (fictício)", valorCentavos: 3250, data: somarDias(hojeSP(), -1) }));
+  await db.transaction((t) => decidirObrigacao(t, G, d1.id, true));
+  await db.transaction((t) => decidirObrigacao(t, G, d2.id, true));
+  const [p1] = await db.select().from(s.parcela).where(eq(s.parcela.obrigacaoId, d1.id));
+  if (banco) await db.transaction((t) => registrarBaixa(t, G, { parcelaId: p1.id, contaId: banco.id, valorCentavos: 1800, dataPagamento: hojeSP(), forma: "pix" }));
+  console.log("Despesas e diárias demonstrativas criadas.");
 }
 
 /** Troca "demo"/"Demo"/"DEMO-" por "demonstrativo" nos textos exibidos dos dados fictícios (idempotente; não toca e-mails, códigos ou chaves). */

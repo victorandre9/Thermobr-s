@@ -3,6 +3,7 @@ import { db } from "@/server/db";
 import { exigirCtx } from "@/server/auth/sessao";
 import { pode } from "@/server/auth/contexto";
 import { agendaPeriodo, visitasSemAgenda } from "@/server/services/agenda";
+import { regioesConhecidas } from "@/server/services/visitas";
 import { listarProfissionais } from "@/server/services/usuarios";
 import { ActionForm, Enviar } from "@/components/action-form";
 import { Card, ChipLink, Filtros, PageHeader, Vazio, Badge } from "@/components/ui";
@@ -20,11 +21,12 @@ export default async function Agenda({ searchParams }: { searchParams: Promise<R
   const dias = Array.from({ length: modo === "dia" ? 1 : 7 }, (_, i) => somarDias(ini, i));
   const [i0] = intervaloDiaSP(dias[0]); const [, i1] = intervaloDiaSP(dias[dias.length - 1]);
   const empresa = pode(ctx, "agenda.ver", "empresa");
-  const reservas = await agendaPeriodo(db, ctx, i0, i1, { profissionalId: sp.profissionalId, situacao: sp.situacao });
+  const reservas = await agendaPeriodo(db, ctx, i0, i1, { profissionalId: sp.profissionalId, situacao: sp.situacao, regiao: sp.regiao });
+  const regioes = empresa ? await regioesConhecidas(db, ctx) : [];
   const profs = empresa ? (await listarProfissionais(db, ctx, { somenteAtivos: true })).filter((p) => ["tecnico", "ajudante"].includes(p.funcao) && (!sp.profissionalId || p.id === sp.profissionalId)) : [];
   const linhas = empresa ? profs.map((p) => ({ id: p.id, nome: p.nome, vinculo: p.vinculo })) : [{ id: ctx.profissional?.id ?? "", nome: "Minha agenda", vinculo: ctx.profissional?.vinculo ?? "" }];
   const fila = pode(ctx, "agenda.gerenciar") ? await visitasSemAgenda(db, ctx) : [];
-  const qs = (o: Record<string, string>) => "/agenda?" + new URLSearchParams({ modo, data: ref, ...(sp.profissionalId ? { profissionalId: sp.profissionalId } : {}), ...o }).toString();
+  const qs = (o: Record<string, string>) => "/agenda?" + new URLSearchParams({ modo, data: ref, ...(sp.profissionalId ? { profissionalId: sp.profissionalId } : {}), ...(sp.regiao ? { regiao: sp.regiao } : {}), ...(sp.situacao ? { situacao: sp.situacao } : {}), ...o }).toString();
   const passo = modo === "dia" ? 1 : 7;
   return (
     <div className="space-y-5">
@@ -35,6 +37,7 @@ export default async function Agenda({ searchParams }: { searchParams: Promise<R
         {empresa && <form action="/agenda" className="ml-auto flex gap-2"><input type="hidden" name="modo" value={modo} /><input type="hidden" name="data" value={ref} />
           <select name="profissionalId" defaultValue={sp.profissionalId ?? ""} className="select !w-56" aria-label="Técnico"><option value="">Todos os técnicos</option>{(await listarProfissionais(db, ctx, { somenteAtivos: true })).map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}</select>
           <select name="situacao" defaultValue={sp.situacao ?? ""} className="select !w-44" aria-label="Situação"><option value="">Todas as situações</option><option value="agendada">Agendadas</option><option value="em_atendimento">Em atendimento</option><option value="finalizada">Finalizadas</option></select>
+          {regioes.length > 0 && <select name="regiao" defaultValue={sp.regiao ?? ""} className="select !w-48" aria-label="Região"><option value="">Todas as regiões</option>{regioes.map((r) => <option key={r} value={r}>{r}</option>)}</select>}
           <button className="btn btn-ghost">Filtrar</button></form>}
       </Filtros>
       <Card pad={false}>

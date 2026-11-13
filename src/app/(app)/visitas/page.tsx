@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { db } from "@/server/db";
 import { exigirCtx } from "@/server/auth/sessao";
-import { listarVisitas, type FiltroVisita } from "@/server/services/visitas";
+import { listarVisitas, regioesConhecidas, type FiltroVisita } from "@/server/services/visitas";
+import { pode } from "@/server/auth/contexto";
 import { Card, ChipLink, Filtros, PageHeader, Paginacao, Vazio } from "@/components/ui";
 import { SituacaoVisita } from "@/components/status";
 import { fmtDataHora, fmtHora } from "@/lib/datas";
@@ -13,11 +14,15 @@ const F: Array<[string, string]> = [["hoje", "Hoje"], ["atrasadas", "Não inicia
 export default async function Visitas({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const ctx = await exigirCtx(); const sp = await searchParams;
   const filtro = (sp.filtro ?? "hoje") as FiltroVisita["filtro"]; const offset = Number(sp.offset ?? 0);
-  const { rows, total } = await listarVisitas(db, ctx, { filtro, de: sp.de, ate: sp.ate, limite: 50, offset });
+  const { rows, total } = await listarVisitas(db, ctx, { filtro, de: sp.de, ate: sp.ate, regiao: sp.regiao, limite: 50, offset });
+  const regioes = pode(ctx, "agenda.ver", "empresa") ? await regioesConhecidas(db, ctx) : [];
+  const extra = `${sp.de ? `&de=${sp.de}&ate=${sp.ate}` : ""}${sp.regiao ? `&regiao=${encodeURIComponent(sp.regiao)}` : ""}`;
   return (
     <div>
-      <PageHeader titulo="Visitas" subtitulo={`${total} visita(s)${sp.de ? ` · ${sp.de} a ${sp.ate}` : ""}`} />
-      <Filtros>{F.map(([k, r]) => <ChipLink key={k} href={`/visitas?filtro=${k}`} ativo={filtro === k}>{r}</ChipLink>)}</Filtros>
+      <PageHeader titulo="Visitas" subtitulo={`${total} visita(s)${sp.de ? ` · ${sp.de} a ${sp.ate}` : ""}${sp.regiao ? ` · região: ${sp.regiao}` : ""}`} />
+      <Filtros>{F.map(([k, r]) => <ChipLink key={k} href={`/visitas?filtro=${k}${extra}`} ativo={filtro === k}>{r}</ChipLink>)}
+        {regioes.length > 0 && <form action="/visitas" className="ml-auto flex gap-2"><input type="hidden" name="filtro" value={filtro} /><select name="regiao" defaultValue={sp.regiao ?? ""} className="select !w-52" aria-label="Região"><option value="">Todas as regiões</option>{regioes.map((r) => <option key={r} value={r}>{r}</option>)}</select><button className="btn btn-ghost">Filtrar</button></form>}
+      </Filtros>
       <Card pad={false}>
         {rows.length === 0 ? <Vazio titulo="Nenhuma visita neste filtro" /> : (
           <div className="tbl-wrap"><table className="tbl"><thead><tr><th>Quando</th><th>OS / cliente</th><th>Equipe</th><th>Situação</th><th>Realizado</th><th>Pendência</th></tr></thead>
@@ -32,7 +37,7 @@ export default async function Visitas({ searchParams }: { searchParams: Promise<
               </tr>
             ))}</tbody></table></div>
         )}
-        <Paginacao total={total} limite={50} offset={offset} base={`/visitas?filtro=${filtro}${sp.de ? `&de=${sp.de}&ate=${sp.ate}` : ""}`} />
+        <Paginacao total={total} limite={50} offset={offset} base={`/visitas?filtro=${filtro}${extra}`} />
       </Card>
     </div>
   );

@@ -40,6 +40,12 @@ export async function exigirAcessoEntidade(dbx: DBOrTx, ctx: Ctx, tipo: string, 
       throw new ErroAcesso();
     }
     case "baixa": case "obrigacao": {
+      // Técnico próprio: só o comprovante da própria despesa (diária/reembolso) lançada por ele.
+      if (tipo === "obrigacao" && ctx.profissional?.vinculo === "proprio" && !pode(ctx, "financeiro.ver")) {
+        const [o] = await dbx.select({ e: obrigacao.empresaId, prof: obrigacao.profissionalId, origem: obrigacao.origemTipo }).from(obrigacao).where(eq(obrigacao.id, id));
+        if (o && o.e === ctx.empresaId && o.prof === ctx.profissional.id && o.origem === "despesa_tecnico") return;
+        throw new ErroAcesso();
+      }
       exigir(ctx, escrever ? "financeiro.baixa.registrar" : "financeiro.ver");
       const q = tipo === "baixa"
         ? dbx.select({ e: baixa.empresaId, restrita: sql<boolean>`(select c.restrita from categoria_financeira c join obrigacao o on o.categoria_id = c.id join parcela p on p.obrigacao_id = o.id where p.id = ${qc(baixa.parcelaId)})` }).from(baixa).where(eq(baixa.id, id))

@@ -8,7 +8,7 @@ import { ErroAcesso } from "../erros";
 import { visitaDoProfissionalSQL } from "./escopo";
 import { hojeSP, intervaloDiaSP } from "@/lib/datas";
 
-export interface FiltroVisita { filtro?: "hoje" | "atrasadas" | "em_atendimento" | "nao_concluidas" | "conflitos" | "finalizadas" | "concluidas_hoje" | "problemas_hoje" | "todas"; de?: string; ate?: string; profissionalId?: string; osId?: string; limite?: number; offset?: number }
+export interface FiltroVisita { filtro?: "hoje" | "atrasadas" | "em_atendimento" | "nao_concluidas" | "conflitos" | "finalizadas" | "concluidas_hoje" | "problemas_hoje" | "todas"; de?: string; ate?: string; profissionalId?: string; osId?: string; regiao?: string; limite?: number; offset?: number }
 
 export function condicoesVisita(ctx: Ctx, f: FiltroVisita): SQL[] {
   const c: SQL[] = [eq(visita.empresaId, ctx.empresaId)];
@@ -16,6 +16,7 @@ export function condicoesVisita(ctx: Ctx, f: FiltroVisita): SQL[] {
     if (!pode(ctx, "agenda.ver", "proprio") || !ctx.profissional) throw new ErroAcesso();
     c.push(visitaDoProfissionalSQL(ctx.profissional.id));
   }
+  if (f.regiao) c.push(sql`exists (select 1 from ordem_servico os2 join cliente_local cl2 on cl2.id = os2.local_id where os2.id = ${qc(visita.osId)} and (lower(cl2.bairro) = lower(${f.regiao}) or lower(cl2.cidade) = lower(${f.regiao})))`);
   const [ini, fim] = intervaloDiaSP(hojeSP());
   switch (f.filtro) {
     case "hoje": c.push(sql`${visita.situacao} <> 'cancelada' and ${visita.inicioPrevisto} >= ${ini.toISOString()} and ${visita.inicioPrevisto} < ${fim.toISOString()}`); break;
@@ -46,4 +47,13 @@ export async function listarVisitas(dbx: DBOrTx, ctx: Ctx, f: FiltroVisita = {})
   }).from(visita).innerJoin(ordemServico, eq(ordemServico.id, visita.osId)).innerJoin(cliente, eq(cliente.id, ordemServico.clienteId)).leftJoin(clienteLocal, eq(clienteLocal.id, ordemServico.localId))
     .where(and(...condicoesVisita(ctx, f))).orderBy(f.filtro === "nao_concluidas" || f.filtro === "finalizadas" ? desc(visita.checkoutEm) : asc(visita.inicioPrevisto)).limit(f.limite ?? 100).offset(f.offset ?? 0);
   return { rows, total: rows[0]?.total ?? 0 };
+}
+
+/** Regiões para filtro: as cadastradas nos técnicos + bairros dos locais de clientes (sem geolocalização). */
+export async function regioesConhecidas(dbx: DBOrTx, ctx: Ctx): Promise<string[]> {
+  const r = await dbx.execute(sql`select distinct initcap(trim(x)) as r from (
+      select jsonb_array_elements_text(coalesce(regioes, '[]'::jsonb)) as x from profissional where empresa_id = ${ctx.empresaId}
+      union all select bairro from cliente_local cl join cliente c on c.id = cl.cliente_id where c.empresa_id = ${ctx.empresaId} and bairro is not null
+    ) t where trim(x) <> '' order by 1`);
+  return (r as unknown as { rows: Array<{ r: string }> }).rows.map((x) => x.r);
 }

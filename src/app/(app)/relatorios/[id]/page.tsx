@@ -27,7 +27,8 @@ export default async function Relatorio({ params, searchParams }: { params: Prom
           {def.filtros.includes("etapa") && <select name="etapa" defaultValue={sp.etapa ?? ""} className="select !w-52" aria-label="Situação"><option value="">Todas as situações</option>{Object.entries(OS_ETAPAS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>}
           {def.filtros.includes("origem") && <select name="origem" defaultValue={sp.origem ?? ""} className="select !w-52" aria-label="Origem"><option value="">Todas as origens</option>{Object.entries(OS_ORIGENS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>}
           {def.filtros.includes("profissionalId") && <select name="profissionalId" defaultValue={sp.profissionalId ?? ""} className="select !w-52" aria-label="Profissional"><option value="">Todos os profissionais</option>{profs.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}</select>}
-          {def.filtros.includes("situacao") && <input name="situacao" defaultValue={sp.situacao} placeholder={id === "acompanhamento" ? "6 ou 12 (meses)" : "situação"} className="input !w-40" />}
+          {def.filtros.includes("situacao") && id === "custos" ? <select name="situacao" defaultValue={sp.situacao ?? "tecnico"} className="select !w-52" aria-label="Agrupar por"><option value="tecnico">Por técnico</option><option value="os">Por OS (serviço)</option><option value="categoria">Por categoria</option></select>
+            : def.filtros.includes("situacao") && <input name="situacao" defaultValue={sp.situacao} placeholder={id === "acompanhamento" ? "6 ou 12 (meses)" : "situação"} className="input !w-40" />}
           {def.filtros.includes("acao") && <input name="acao" defaultValue={sp.acao} placeholder="ação (ex.: financeiro.)" className="input !w-48" />}
           <button className="btn btn-primary">Aplicar</button>
         </form>

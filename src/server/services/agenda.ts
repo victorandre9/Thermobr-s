@@ -117,7 +117,7 @@ export async function removerIndisponibilidade(tx: DBOrTx, ctx: Ctx, reservaId: 
 }
 
 // ---------------------------------------------------------------- consultas
-export async function agendaPeriodo(dbx: DBOrTx, ctx: Ctx, inicio: Date, fim: Date, f: { profissionalId?: string; situacao?: string } = {}) {
+export async function agendaPeriodo(dbx: DBOrTx, ctx: Ctx, inicio: Date, fim: Date, f: { profissionalId?: string; situacao?: string; regiao?: string } = {}) {
   exigir(ctx, "agenda.ver", "proprio");
   const conds = [eq(agendaReserva.empresaId, ctx.empresaId), eq(agendaReserva.ativo, true), sql`${qc(agendaReserva.periodo)} && tstzrange(${inicio.toISOString()}, ${fim.toISOString()})`];
   const proprio = !pode(ctx, "agenda.ver", "empresa");
@@ -131,7 +131,7 @@ export async function agendaPeriodo(dbx: DBOrTx, ctx: Ctx, inicio: Date, fim: Da
     inicio: sql<string>`lower(${qc(agendaReserva.periodo)})`, fim: sql<string>`upper(${qc(agendaReserva.periodo)})`,
     visitaId: visita.id, visitaSituacao: visita.situacao, visitaResultado: visita.resultado, sequencia: visita.sequencia,
     osId: ordemServico.id, osNumero: ordemServico.numero, osDescricao: ordemServico.descricao, prioridade: ordemServico.prioridade,
-    clienteNome: cliente.nome, localNome: clienteLocal.nome, bairro: clienteLocal.bairro,
+    clienteNome: cliente.nome, localNome: clienteLocal.nome, bairro: clienteLocal.bairro, cidade: clienteLocal.cidade,
   }).from(agendaReserva)
     .innerJoin(profissional, eq(profissional.id, agendaReserva.profissionalId))
     .leftJoin(visita, eq(visita.id, agendaReserva.visitaId))
@@ -139,7 +139,8 @@ export async function agendaPeriodo(dbx: DBOrTx, ctx: Ctx, inicio: Date, fim: Da
     .leftJoin(cliente, eq(cliente.id, ordemServico.clienteId))
     .leftJoin(clienteLocal, eq(clienteLocal.id, ordemServico.localId))
     .where(and(...conds)).orderBy(sql`lower(${qc(agendaReserva.periodo)})`, asc(profissional.nome));
-  return rows.filter((r) => !f.situacao || r.visitaSituacao === f.situacao);
+  const reg = f.regiao?.trim().toLowerCase();
+  return rows.filter((r) => (!f.situacao || r.visitaSituacao === f.situacao) && (!reg || r.bairro?.trim().toLowerCase() === reg || r.cidade?.trim().toLowerCase() === reg));
 }
 
 export async function listarVagas(dbx: DBOrTx, ctx: Ctx) {

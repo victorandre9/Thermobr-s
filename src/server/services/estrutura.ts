@@ -47,6 +47,8 @@ const CATEGORIAS = [
   { natureza: "pagar", codigo: "veiculo", nome: "Veículos (manutenção, combustível)" },
   { natureza: "pagar", codigo: "ferramenta", nome: "Ferramentas" },
   { natureza: "pagar", codigo: "uber_ferramenta", nome: "Transporte por aplicativo (ferramenta esquecida)" },
+  { natureza: "pagar", codigo: "diarias", nome: "Diárias de equipe" },
+  { natureza: "pagar", codigo: "reembolso_tecnico", nome: "Reembolso a técnico" },
   { natureza: "pagar", codigo: "administrativa", nome: "Despesas administrativas" },
   { natureza: "pagar", codigo: "impostos_taxas", nome: "Impostos e taxas (pagamento)" },
   { natureza: "pagar", codigo: "salarios", nome: "Salários e encargos", restrita: true },

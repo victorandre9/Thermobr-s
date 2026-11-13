@@ -75,8 +75,9 @@ export interface NovaObrigacao {
   legado?: boolean;
 }
 
-export async function criarObrigacao(tx: DBOrTx, ctx: Ctx, d: NovaObrigacao, opts: { permissaoAlternativa?: Permissao } = {}) {
-  if (!pode(ctx, "financeiro.lancar") && !(opts.permissaoAlternativa && pode(ctx, opts.permissaoAlternativa))) throw new ErroAcesso();
+export async function criarObrigacao(tx: DBOrTx, ctx: Ctx, d: NovaObrigacao, opts: { permissaoAlternativa?: Permissao; solicitacaoTecnico?: boolean } = {}) {
+  // solicitacaoTecnico: só pelo serviço de despesas (técnico próprio, categorias diárias/reembolso, sempre aguardando aprovação).
+  if (!pode(ctx, "financeiro.lancar") && !(opts.permissaoAlternativa && pode(ctx, opts.permissaoAlternativa)) && !opts.solicitacaoTecnico) throw new ErroAcesso();
   const [cat] = await tx.select().from(categoriaFinanceira).where(and(eq(categoriaFinanceira.id, d.categoriaId), eq(categoriaFinanceira.empresaId, ctx.empresaId)));
   if (!cat || cat.natureza !== d.natureza) throw new ErroNegocio("Categoria inválida para a natureza.");
   if (cat.restrita && !pode(ctx, "financeiro.restrito.ver")) throw new ErroAcesso("Categoria restrita (salários/retiradas) exige permissão específica.");
@@ -94,7 +95,7 @@ export async function criarObrigacao(tx: DBOrTx, ctx: Ctx, d: NovaObrigacao, opt
   if (d.clienteId) { const [c] = await tx.select().from(cliente).where(and(eq(cliente.id, d.clienteId), eq(cliente.empresaId, ctx.empresaId))); if (!c) throw new ErroNegocio("Cliente inválido."); }
   const exigeDupla = cat.duplaAprovacaoAcimaCentavos !== null && liquido >= cat.duplaAprovacaoAcimaCentavos;
   const podeAprovar = pode(ctx, "financeiro.aprovar");
-  const autoAprovar = d.origemAprovada || (podeAprovar && !exigeDupla);
+  const autoAprovar = !opts.solicitacaoTecnico && (d.origemAprovada || (podeAprovar && !exigeDupla));
   let ob;
   try {
     ob = await tx.transaction(async (sp) => {

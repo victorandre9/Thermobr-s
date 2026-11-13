@@ -16,6 +16,7 @@ import { listarVisitas } from "./visitas";
 import { listarParcelas } from "./financeiro";
 import { realizadoPeriodo, projecao, saldosRealizados } from "./fluxo";
 import { listarServicosAutonomos } from "./autonomos";
+import { custosOperacionais, produtividadeTecnicos } from "./produtividade";
 import { OS_ETAPAS, OS_ORIGENS, VISITA_RESULTADOS, MOTIVOS_RESULTADO, rotulo, AUTONOMO_SITUACAO, FERRAMENTA_SITUACOES, FERRAMENTA_CONDICOES, MATERIAL_MOV_TIPOS, MATERIAL_MOV_STATUS, OBRIGACAO_APROVACAO, VISITA_SITUACOES } from "@/lib/dominio";
 import { intervaloDiaSP, primeiroDiaMes, somarMeses, hojeSP } from "@/lib/datas";
 
@@ -28,6 +29,9 @@ export interface DefRelatorio { id: string; titulo: string; descricao: string; p
 
 const LIM = (f: Filtros) => ({ limite: f.limite ?? 50, offset: f.offset ?? 0 });
 const periodo = (f: Filtros) => { const de = f.de ?? primeiroDiaMes(hojeSP()); const ate = f.ate ?? hojeSP(); return { de, ate, ini: intervaloDiaSP(de)[0], fim: intervaloDiaSP(ate)[1] }; };
+
+const minutos = (m: number | null) => (m === null ? "—" : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`);
+const VINC: Record<string, string> = { proprio: "Equipe própria", autonomo: "Autônomo" };
 
 export const RELATORIOS: DefRelatorio[] = [
   {
@@ -167,6 +171,27 @@ export const RELATORIOS: DefRelatorio[] = [
         .from(auditoria).leftJoin(usuario, eq(usuario.id, auditoria.usuarioId)).where(and(...conds)).orderBy(desc(auditoria.em)).limit(LIM(f).limite).offset(LIM(f).offset);
       return { total: rows[0]?.total ?? 0, avisos: f.acao ? [] : ["Exibindo somente eventos sensíveis. Filtre por ação (ex.: financeiro., material., os.) para ver todos."], colunas: [{ chave: "em", rotulo: "Data", tipo: "datahora" }, { chave: "usuario", rotulo: "Usuário" }, { chave: "acao", rotulo: "Ação" }, { chave: "entidade", rotulo: "Registro" }, { chave: "motivo", rotulo: "Motivo" }, { chave: "antes", rotulo: "Antes" }, { chave: "depois", rotulo: "Depois" }],
         linhas: rows.map(({ total, ...r }) => (void total, { ...r, entidade: `${r.entidade}${r.id ? " " + String(r.id).slice(0, 8) : ""}`, antes: r.antes ? JSON.stringify(r.antes).slice(0, 300) : "", depois: r.depois ? JSON.stringify(r.depois).slice(0, 300) : "" })) };
+    },
+  },
+  {
+    id: "produtividade", titulo: "12. Produtividade por técnico", descricao: "Agendadas x realizadas, concluídas, parciais, não realizadas, tempo em campo e média por visita, lado a lado.", permissoes: ["relatorio.operacional", "agenda.ver"], filtros: ["de", "ate"],
+    async gerar(dbx, ctx, f) {
+      const { de, ate } = periodo(f);
+      const rows = await produtividadeTecnicos(dbx, ctx, de, ate);
+      return { total: rows.length, avisos: ["Cumprimento = concluídas ÷ visitas já vencidas no período. Tempo em campo = chegada e saída registradas por cada técnico."],
+        colunas: [{ chave: "nome", rotulo: "Técnico" }, { chave: "vinculo", rotulo: "Vínculo" }, { chave: "agendadas", rotulo: "Agendadas", tipo: "numero" }, { chave: "concluidas", rotulo: "Concluídas", tipo: "numero" }, { chave: "parciais", rotulo: "Parciais", tipo: "numero" }, { chave: "naoRealizadas", rotulo: "Não realizadas", tipo: "numero" }, { chave: "naoIniciadas", rotulo: "Não iniciadas (atrasadas)", tipo: "numero" }, { chave: "emAberto", rotulo: "A realizar", tipo: "numero" }, { chave: "cumprimento", rotulo: "Cumprimento" }, { chave: "campo", rotulo: "Tempo em campo" }, { chave: "media", rotulo: "Média por visita" }],
+        linhas: rows.map((r) => ({ ...r, vinculo: VINC[r.vinculo] ?? r.vinculo, cumprimento: r.cumprimento === null ? "—" : `${r.cumprimento}%`, campo: minutos(r.minutosCampo), media: minutos(r.mediaMinutos) })) };
+    },
+  },
+  {
+    id: "custos", titulo: "13. Custos por técnico, OS e categoria", descricao: "Despesas, diárias, reembolsos, autônomos e demais contas a pagar do período, agrupadas.", permissoes: ["relatorio.financeiro", "financeiro.ver"], filtros: ["de", "ate", "situacao"],
+    async gerar(dbx, ctx, f) {
+      const { de, ate } = periodo(f);
+      const ag = f.situacao === "os" ? "os" : f.situacao === "categoria" ? "categoria" : "tecnico";
+      const r = await custosOperacionais(dbx, ctx, de, ate, ag);
+      return { total: r.linhas.length, avisos: [`Total do período: ${(r.total / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}. Considera parcelas com vencimento no período (aprovadas ou aguardando). ${ag === "tecnico" ? "Só entram lançamentos ligados a um técnico." : ag === "os" ? "Só entram lançamentos ligados a uma OS." : ""}`.trim()],
+        colunas: [{ chave: "rotulo", rotulo: ag === "tecnico" ? "Técnico" : ag === "os" ? "OS" : "Categoria" }, ...(ag === "categoria" ? [] : [{ chave: "detalhe", rotulo: "Categorias" }]), { chave: "lancamentos", rotulo: "Lançamentos", tipo: "numero" as const }, { chave: "valorCentavos", rotulo: "Valor", tipo: "moeda" as const }],
+        linhas: r.linhas.map((l) => ({ ...l })) };
     },
   },
   {

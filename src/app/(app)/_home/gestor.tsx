@@ -3,6 +3,8 @@ import { ChevronRight } from "lucide-react";
 import { db } from "@/server/db";
 import type { Ctx } from "@/server/auth/contexto";
 import { pode } from "@/server/auth/contexto";
+import { produtividadeTecnicos } from "@/server/services/produtividade";
+import { somarDias } from "@/lib/datas";
 import { resumoVisitasHoje, resumoFinanceiro, proximosDias, decisoesDonos, indicadoresGestor, avisoConfiguracao } from "@/server/services/inicio";
 import { Badge, Card, Dinheiro } from "@/components/ui";
 import { Barras } from "@/components/barras";
@@ -18,6 +20,8 @@ export async function HomeGestor({ ctx, sp }: { ctx: Ctx; sp: SP }) {
   const [hoje, fin, prox, dec, ind, aviso] = await Promise.all([
     resumoVisitasHoje(db, ctx), resumoFinanceiro(db, ctx, per), proximosDias(db, ctx, h), decisoesDonos(db, ctx), indicadoresGestor(db, ctx), avisoConfiguracao(db, ctx),
   ]);
+  const prod = pode(ctx, "agenda.ver", "empresa") ? (await produtividadeTecnicos(db, ctx, somarDias(hojeSP(), -29), hojeSP())).filter((p) => p.agendadas > 0) : [];
+  const hm = (m: number | null) => (m === null ? "—" : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`);
   const q = (o: Record<string, string>) => "/?" + new URLSearchParams({ ...Object.fromEntries(Object.entries(sp).filter(([, v]) => v) as [string, string][]), ...o }).toString();
   const dia = hojeSP();
   return (
@@ -71,6 +75,24 @@ export async function HomeGestor({ ctx, sp }: { ctx: Ctx; sp: SP }) {
           {dec.length > 5 && <div className="px-4 py-2 text-[12.5px]"><Link href="/financeiro/aprovacoes" className="font-semibold text-ice-strong">Ver todas ({dec.length})</Link></div>}
         </Card>
       </Secao>
+
+      {prod.length > 0 && (
+        <Secao titulo="Produtividade por técnico" sub="Últimos 30 dias: agendadas x realizadas e tempo em campo" acao={<Link href={`/relatorios/produtividade?de=${somarDias(hojeSP(), -29)}&ate=${hojeSP()}`} className="btn btn-ghost btn-sm">Relatório completo</Link>}>
+          <Card pad={false}>
+            <div className="tbl-wrap"><table className="tbl"><thead><tr><th>Técnico</th><th>Concluídas / agendadas</th><th>Cumprimento</th><th>Parciais · não realiz.</th><th>Tempo em campo</th><th>Média/visita</th></tr></thead>
+              <tbody>{prod.map((p) => (
+                <tr key={p.profissionalId}>
+                  <td><Link href={`/relatorios/visitas?profissionalId=${p.profissionalId}&de=${somarDias(hojeSP(), -29)}&ate=${hojeSP()}`} className="font-semibold text-navy hover:underline">{p.nome}</Link><div className="text-[11.5px] text-muted">{p.vinculo === "autonomo" ? "Autônomo" : "Equipe própria"}</div></td>
+                  <td className="num">{p.concluidas} / {p.agendadas}</td>
+                  <td className={`num font-semibold ${p.cumprimento !== null && p.cumprimento < 70 ? "text-warn" : "text-navy"}`}>{p.cumprimento === null ? "—" : `${p.cumprimento}%`}</td>
+                  <td className="num">{p.parciais} · {p.naoRealizadas}{p.naoIniciadas > 0 && <div className="text-[11.5px] text-bad">{p.naoIniciadas} não iniciada(s)</div>}</td>
+                  <td className="num">{hm(p.minutosCampo)}</td>
+                  <td className="num">{hm(p.mediaMinutos)}</td>
+                </tr>
+              ))}</tbody></table></div>
+          </Card>
+        </Secao>
+      )}
 
       <Secao titulo="Indicadores" sub="Últimos 30 dias, a partir dos registros" acao={pode(ctx, "relatorio.operacional") ? <Link href="/relatorios" className="btn btn-ghost btn-sm">Relatórios <ChevronRight size={14} /></Link> : undefined}>
         <div className="grid gap-3 lg:grid-cols-3">

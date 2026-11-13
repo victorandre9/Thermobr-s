@@ -13,6 +13,7 @@ export function montarNav(ctx: Ctx): { itens: ItemNav[]; tecnico: boolean } {
     if (pode(ctx, "ferramenta.ver", "proprio")) i.push({ href: "/ferramentas", rotulo: "Ferramentas", icone: "wrench", grupo: "" });
     if (pode(ctx, "material.ver", "proprio")) i.push({ href: "/materiais/minha-custodia", rotulo: "Materiais", icone: "package", grupo: "" });
     if (temAcessoChecklistVeiculo(ctx)) { i.push({ href: "/checklist-hoje", rotulo: "Checklist de hoje", icone: "check", grupo: "" }); i.push({ href: "/veiculos", rotulo: "Meu veículo", icone: "truck", grupo: "" }); }
+    if (ctx.profissional?.vinculo === "proprio") i.push({ href: "/minhas-despesas", rotulo: "Despesas e diárias", icone: "wallet", grupo: "" });
     if (ctx.profissional?.vinculo === "autonomo" && pode(ctx, "autonomo.valores.ver", "proprio")) i.push({ href: "/meus-pagamentos", rotulo: "Meus pagamentos", icone: "wallet", grupo: "" });
     if (pode(ctx, "pendencia.ver", "proprio")) i.push({ href: "/pendencias", rotulo: "Pendências", icone: "alert", grupo: "" });
     return { itens: i, tecnico };

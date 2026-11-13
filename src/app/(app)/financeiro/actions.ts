@@ -8,12 +8,17 @@ import { getStorage } from "@/server/storage";
 import { dividirParcelas } from "@/lib/money";
 import { somarMeses } from "@/lib/datas";
 import type { EstadoAcao } from "@/components/action-form";
+import { and, eq } from "drizzle-orm";
+import { ordemServico } from "@/server/db/schema";
+import { ErroNegocio } from "@/server/erros";
 
 const R = ["/financeiro/receber", "/financeiro/pagar", "/financeiro/aprovacoes", "/financeiro/caixa", "/"];
 export async function acaoNovaObrigacao(_: EstadoAcao, fd: FormData) {
   return executar(async (tx, ctx) => {
     const total = moedaReq(fd, "valor", "valor"); const desc = moeda(fd, "desconto") ?? 0; const n = int(fd, "parcelas") ?? 1; const venc = req(fd, "vencimento", "vencimento");
-    const base = { natureza: req(fd, "natureza") as "pagar", categoriaId: req(fd, "categoriaId", "categoria"), clienteId: txt(fd, "clienteId"), fornecedorId: txt(fd, "fornecedorId"), profissionalId: txt(fd, "profissionalId"), beneficiarioNome: txt(fd, "beneficiario"), descricao: req(fd, "descricao", "descrição"), competencia: txt(fd, "competencia") ? txt(fd, "competencia") + "-01" : null, valorBrutoCentavos: total, descontoCentavos: desc, documento: txt(fd, "documento"), contaPrevistaId: txt(fd, "contaId"), parcelas: dividirParcelas(total - desc, n).map((v, i) => ({ vencimento: somarMeses(venc, i), valorCentavos: v })) };
+    const osNum = int(fd, "osNumero"); let osId: string | null = null;
+    if (osNum) { const [o] = await tx.select({ id: ordemServico.id }).from(ordemServico).where(and(eq(ordemServico.empresaId, ctx.empresaId), eq(ordemServico.numero, osNum))); if (!o) throw new ErroNegocio(`OS ${osNum} não encontrada.`); osId = o.id; }
+    const base = { osId, natureza: req(fd, "natureza") as "pagar", categoriaId: req(fd, "categoriaId", "categoria"), clienteId: txt(fd, "clienteId"), fornecedorId: txt(fd, "fornecedorId"), profissionalId: txt(fd, "profissionalId"), beneficiarioNome: txt(fd, "beneficiario"), descricao: req(fd, "descricao", "descrição"), competencia: txt(fd, "competencia") ? txt(fd, "competencia") + "-01" : null, valorBrutoCentavos: total, descontoCentavos: desc, documento: txt(fd, "documento"), contaPrevistaId: txt(fd, "contaId"), parcelas: dividirParcelas(total - desc, n).map((v, i) => ({ vencimento: somarMeses(venc, i), valorCentavos: v })) };
     const ob = bool(fd, "legado") ? await lancarObrigacaoLegado(tx, ctx, { ...base, identificador: req(fd, "identificador", "identificador do documento antigo") }) : await F.criarObrigacao(tx, ctx, { ...base, origemTipo: "manual", chaveUnicidade: txt(fd, "_idem") ? `manual:${txt(fd, "_idem")}` : null });
     return { msg: "Lançamento registrado.", redirecionar: `/financeiro/obrigacoes/${ob.id}` };
   }, R);
