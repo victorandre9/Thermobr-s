@@ -52,7 +52,12 @@ const fone = () => `(00) 9${int(1000, 9999)}-${int(1000, 9999)}`;
 export async function popularMassa(db: DB, empresaId: string) {
   const [emp] = await db.select().from(s.empresa).where(eq(s.empresa.id, empresaId));
   const cfg = (emp.config ?? {}) as Record<string, unknown>;
-  if ((cfg.demo as { massa?: number } | undefined)?.massa) { console.log("Massa de teste já carregada."); return; }
+  const marca = (cfg.demo as { massa?: number | string } | undefined)?.massa;
+  if (marca === 1) { console.log("Massa de teste já carregada."); return; }
+  const [parcial] = await db.select({ id: s.fornecedor.id }).from(s.fornecedor).where(and(eq(s.fornecedor.empresaId, empresaId), eq(s.fornecedor.nome, "Refrigeração Polo Frio (fictício)")));
+  if (marca === "iniciada" || parcial) { console.warn("[massa] Carga anterior interrompida: massa de teste ficou parcial. Não será repetida (evita duplicar). Recrie o banco de demonstração para carregar do zero."); return; }
+  const marcar = (v: string) => db.update(s.empresa).set({ config: sql`jsonb_set(coalesce(${s.empresa.config}, '{}'::jsonb), '{demo}', ${JSON.stringify({ massa: v === "1" ? 1 : v })}::jsonb)` }).where(eq(s.empresa.id, empresaId));
+  await marcar("iniciada");
   const tx = <X,>(fn: (t: T) => Promise<X>) => db.transaction(fn);
   const user = async (prefixo: string) => { const [u] = await db.select().from(s.usuario).where(and(eq(s.usuario.empresaId, empresaId), sql`${s.usuario.email} like ${prefixo + "@%"}`)); return (await carregarCtx(db, u.id)) as Ctx; };
   const G = await user("gestor"), G2 = await user("socio"), A = await user("admin"), F = await user("financeiro");
@@ -374,7 +379,7 @@ export async function popularMassa(db: DB, empresaId: string) {
     try { const r = await tx((t) => emitirRelatorio(t, A, { osId, anexosIds: [] })); if (i < 2) await tx((t) => registrarCiencia(t, A, r.id, i === 0 ? { situacao: "registrada", nome: pick(NOMES_CONTATO), observacao: "Serviço acompanhado no local" } : { situacao: "ausente", observacao: "Responsável não estava; recepcionista acompanhou" })); } catch (e) { console.log(`(relatório: ${(e as Error).message})`); }
   }
 
-  await db.update(s.empresa).set({ config: sql`jsonb_set(coalesce(${s.empresa.config}, '{}'::jsonb), '{demo}', '{"massa": 1}'::jsonb)` }).where(eq(s.empresa.id, empresaId));
+  await marcar("1");
   const [{ n: nOs }] = await db.select({ n: sql<number>`count(*)::int` }).from(s.ordemServico).where(eq(s.ordemServico.empresaId, empresaId));
   const [{ n: nCli }] = await db.select({ n: sql<number>`count(*)::int` }).from(s.cliente).where(eq(s.cliente.empresaId, empresaId));
   const [{ n: nVis }] = await db.select({ n: sql<number>`count(*)::int` }).from(s.visita).where(eq(s.visita.empresaId, empresaId));
