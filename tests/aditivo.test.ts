@@ -306,3 +306,32 @@ describe("Dashboard rastreável", () => {
     void conferirOS;
   });
 });
+
+describe("Páginas iniciais por perfil", () => {
+  it("indicadores batem com as listas de destino e respeitam permissões", async () => {
+    const { visoesDisponiveis, resumoVisitasHoje, resumoOperacional, resumoFinanceiro, compromissosHoje, pagamentosEConferencias, avisoConfiguracao, decisoesDonos } = await import("@/server/services/inicio");
+    const { listarVisitas } = await import("@/server/services/visitas");
+    const { listarParcelas } = await import("@/server/services/financeiro");
+    expect(visoesDisponiveis(c.ctx.gestor)).toEqual(["gestor", "administrativo", "financeiro"]);
+    expect(visoesDisponiveis(c.ctx.admin)).toEqual(["administrativo"]);
+    expect(visoesDisponiveis(c.ctx.fin)).toEqual(["financeiro"]);
+    expect(visoesDisponiveis(c.ctx.aut)).toEqual([]);
+    const vh = await resumoVisitasHoje(db, c.ctx.gestor);
+    for (const [id, filtro] of [["hoje", "hoje"], ["concluidas", "concluidas_hoje"], ["andamento", "em_atendimento"], ["problemas", "problemas_hoje"]] as const)
+      expect(vh.find((i) => i.id === id)!.valor).toBe((await listarVisitas(db, c.ctx.gestor, { filtro, limite: 1000 })).total);
+    // administrativo: sem financeiro, sem aviso financeiro, sem decisões financeiras
+    expect(await resumoFinanceiro(db, c.ctx.admin, { de: hojeSP(), ate: hojeSP() })).toBeNull();
+    expect(await avisoConfiguracao(db, c.ctx.admin)).toBeNull();
+    expect((await decisoesDonos(db, c.ctx.admin)).some((d) => d.valorCentavos !== null)).toBe(false);
+    const op = await resumoOperacional(db, c.ctx.admin);
+    expect(op.every((i) => !i.moeda)).toBe(true);
+    // financeiro: compromissos e pagamentos coerentes com as listas; aviso sem ação de configurar
+    const ch = await compromissosHoje(db, c.ctx.fin);
+    expect(ch.find((i) => i.id === "pagar_hoje")!.valor).toBe((await listarParcelas(db, c.ctx.fin, { natureza: "pagar", situacao: "hoje", limite: 1000 })).somaSaldo);
+    const pg = await pagamentosEConferencias(db, c.ctx.fin);
+    expect(pg.find((i) => i.id === "aguard_aut")!.valor).toBe((await listarParcelas(db, c.ctx.fin, { natureza: "pagar", situacao: "abertas", aprovacao: "aguardando_aprovacao", limite: 1000 })).somaSaldo);
+    expect(pg.find((i) => i.id === "conferencia")!.href).not.toBe("/financeiro/aprovacoes");
+    const av = await avisoConfiguracao(db, c.ctx.fin);
+    if (av) expect(av.podeConfigurar).toBe(false);
+  });
+});

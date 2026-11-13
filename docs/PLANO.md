@@ -108,6 +108,18 @@ Princípios de consistência:
 - [x] A15 Backlog de evoluções documentado
 - [x] A17 Testes do aditivo
 
+## Ajuste das telas iniciais por perfil
+- [x] Gestor "Visão geral": hoje na operação, financeiro por período (hoje/semana/mês/personalizado), próximos 7/15/30 dias, decisões dos donos (até 5 + ver todas), indicadores 30 dias
+- [x] Administrativo "Operação de hoje": agenda do dia com ações, resumo compacto, o que precisa ser resolvido (prioridade + próxima ação), ações rápidas; sem valores financeiros
+- [x] Financeiro "Financeiro": compromissos de hoje (abertos × confirmados), cobranças e atrasos, pagamentos × conferências, caixa previsto 7/15/30, ações rápidas
+- [x] Central de pendências mantida como tela secundária
+- [x] Usuário com mais de um perfil escolhe a visão inicial (cookie `tb_visao`); não concede permissão
+- [x] Aviso de configuração: "Configurar" só para quem configura; financeiro vê limitação; administrativo não vê
+- [x] Celular: KPIs 2 por linha, sem rolagem horizontal, botões curtos
+- [x] Mensagem prática de conflito de agenda; texto de implementação removido
+- [x] Teste: indicadores batem com listas de destino e respeitam permissões
+- [x] Massa de dados de teste fictícia (`scripts/seed-massa.ts`)
+
 ## Situação (fim desta sessão)
-- Todas as fases e itens do aditivo implementados com persistência, telas e testes (43 testes automatizados passando) e validação manual desktop/celular com dados demo.
+- Todas as fases e itens do aditivo implementados com persistência, telas e testes (44 testes automatizados passando) e validação manual desktop/celular com dados demo.
 - Pendências externas permanecem (ver seção acima): logo em arquivo, API de pedidos Treeunfe, credenciais Neon/bucket/domínio, política de delegação financeira e estrutura real da equipe.

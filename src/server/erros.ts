@@ -15,9 +15,9 @@ export function traduzirErroBanco(e: unknown): Error {
   const err = e as { code?: string; constraint?: string; message?: string; cause?: unknown };
   const pg = (err && err.code ? err : (err?.cause as typeof err)) ?? err;
   const c = pg?.constraint ?? "";
-  if (pg?.code === "23P01" && c.includes("agenda_reserva")) return new ErroNegocio("Conflito de agenda: um ou mais profissionais já estão reservados neste intervalo.");
-  if (pg?.code === "23P01" && c.includes("recurso_veiculo")) return new ErroNegocio("Conflito de recurso: o veículo já está reservado para outra visita neste intervalo.");
-  if (pg?.code === "23P01" && c.includes("recurso_ferramenta")) return new ErroNegocio("Conflito de recurso: a ferramenta exclusiva já está reservada para outra visita neste intervalo.");
+  if (pg?.code === "23P01" && c.includes("agenda_reserva")) return new ErroNegocio("Este técnico já possui atendimento nesse horário. Escolha outro horário ou outro técnico.");
+  if (pg?.code === "23P01" && c.includes("recurso_veiculo")) return new ErroNegocio("Este veículo já está reservado para outro atendimento nesse horário.");
+  if (pg?.code === "23P01" && c.includes("recurso_ferramenta")) return new ErroNegocio("Esta ferramenta já está reservada para outro atendimento nesse horário.");
   if (pg?.code === "23514" && c.includes("material_saldo")) return new ErroNegocio("Saldo insuficiente: a operação deixaria o estoque/custódia negativo ou abaixo do reservado.");
   if (pg?.code === "23505") {
     if (c.includes("obrigacao_chave")) return new ErroNegocio("Esta obrigação já foi gerada anteriormente (proteção contra duplicidade).");

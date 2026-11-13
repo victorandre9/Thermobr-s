@@ -169,3 +169,19 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--color-ice-stro
 .glass-bar { background: linear-gradient(170deg, rgba(255,255,255,.7), rgba(236,246,252,.75)); border: 1px solid rgba(255,255,255,.95); box-shadow: var(--gl-card-rim), 0 18px 26px -12px rgba(60,86,112,.35); backdrop-filter: blur(16px) saturate(1.2); -webkit-backdrop-filter: blur(16px) saturate(1.2); }
 .bn-item { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: .45rem 0; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--color-text-2); position: relative; isolation: isolate; }
 .bn-item[aria-current="page"] { color: #fff; text-shadow: var(--gl-txt-shadow); background: var(--gl-acc-body); box-shadow: var(--gl-edges), var(--gl-acc-drop); }
+
+/* Indicadores compactos das páginas iniciais: menos altura, sombra mais leve, leitura clara */
+.tile-kpi { display: flex; flex-direction: column; gap: .2rem; min-height: 84px; padding: .7rem .85rem; border-radius: 18px; color: var(--color-text);
+  background: rgba(255,255,255,.82); border: 1px solid rgba(255,255,255,.95); box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 6px 14px -10px rgba(60,86,112,.35); transition: box-shadow .15s, transform .08s; }
+.tile-kpi:hover { box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 12px 20px -12px rgba(60,86,112,.45); }
+.tile-kpi:active { transform: translateY(1px); }
+.tile-kpi.problema { border-color: #F6D2B5; background: #FFF8F2; }
+.tile-kpi.ok .v { color: var(--color-ok); }
+.sec-tit { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: .4rem .75rem; margin: 0 0 .6rem; }
+.sec-tit > div:first-child { min-width: 12rem; flex: 1 1 14rem; }
+.sec-tit h2 { font-size: 15px; font-weight: 700; color: var(--color-navy); }
+.linha-acao { display: flex; align-items: center; gap: .75rem; padding: .7rem .9rem; border-bottom: 1px solid rgba(200,220,232,.55); }
+.linha-acao:last-child { border-bottom: 0; }
+@media (max-width: 640px) { .card { box-shadow: var(--gl-card-rim), 0 10px 16px -12px rgba(60,86,112,.3); } }
+/* evita rolagem horizontal: itens de grade podem encolher (textos longos truncam em vez de alargar a página) */
+.grid > * { min-width: 0; }

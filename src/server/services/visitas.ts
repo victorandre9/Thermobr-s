@@ -8,7 +8,7 @@ import { ErroAcesso } from "../erros";
 import { visitaDoProfissionalSQL } from "./escopo";
 import { hojeSP, intervaloDiaSP } from "@/lib/datas";
 
-export interface FiltroVisita { filtro?: "hoje" | "atrasadas" | "em_atendimento" | "nao_concluidas" | "conflitos" | "finalizadas" | "todas"; de?: string; ate?: string; profissionalId?: string; osId?: string; limite?: number; offset?: number }
+export interface FiltroVisita { filtro?: "hoje" | "atrasadas" | "em_atendimento" | "nao_concluidas" | "conflitos" | "finalizadas" | "concluidas_hoje" | "problemas_hoje" | "todas"; de?: string; ate?: string; profissionalId?: string; osId?: string; limite?: number; offset?: number }
 
 export function condicoesVisita(ctx: Ctx, f: FiltroVisita): SQL[] {
   const c: SQL[] = [eq(visita.empresaId, ctx.empresaId)];
@@ -21,6 +21,10 @@ export function condicoesVisita(ctx: Ctx, f: FiltroVisita): SQL[] {
     case "hoje": c.push(sql`${visita.situacao} <> 'cancelada' and ${visita.inicioPrevisto} >= ${ini.toISOString()} and ${visita.inicioPrevisto} < ${fim.toISOString()}`); break;
     case "atrasadas": c.push(sql`${visita.situacao} = 'agendada' and ${visita.inicioPrevisto} < now()`); break;
     case "em_atendimento": c.push(eq(visita.situacao, "em_atendimento")); break;
+    // concluídas hoje: check-out hoje (SP) com resultado concluída
+    case "concluidas_hoje": c.push(sql`${visita.situacao} = 'finalizada' and ${visita.resultado} = 'concluida' and ${visita.checkoutEm} >= ${ini.toISOString()} and ${visita.checkoutEm} < ${fim.toISOString()}`); break;
+    // problemas hoje: não iniciadas após o horário (qualquer dia) ou finalizadas hoje como parcial/não realizada
+    case "problemas_hoje": c.push(sql`((${visita.situacao} = 'agendada' and ${visita.inicioPrevisto} < now()) or (${visita.situacao} = 'finalizada' and ${visita.resultado} in ('parcial','nao_realizada') and ${visita.checkoutEm} >= ${ini.toISOString()} and ${visita.checkoutEm} < ${fim.toISOString()}))`); break;
     case "nao_concluidas": c.push(sql`${visita.situacao} = 'finalizada' and ${visita.resultado} in ('parcial','nao_realizada')`); break;
     case "finalizadas": c.push(eq(visita.situacao, "finalizada")); break;
     case "conflitos": c.push(sql`${visita.situacao} = 'agendada' and (not exists (select 1 from ${agendaReserva} ar where ar.visita_id = ${qc(visita.id)} and ar.ativo) or exists (select 1 from ${agendaReserva} ar join ${profissional} p on p.id = ar.profissional_id where ar.visita_id = ${qc(visita.id)} and ar.ativo and not p.ativo))`); break;

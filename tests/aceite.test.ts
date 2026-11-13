@@ -201,7 +201,7 @@ describe("Agenda", () => {
     ]);
     expect(res.filter((r) => r.status === "fulfilled")).toHaveLength(1);
     const rej = res.find((r) => r.status === "rejected") as PromiseRejectedResult;
-    expect(String(rej.reason.message)).toMatch(/Conflito de agenda/);
+    expect(String(rej.reason.message)).toMatch(/já possui atendimento/);
   });
 });
 

@@ -89,7 +89,7 @@ export async function baloesGestor(dbx: DBOrTx, ctx: Ctx, periodo: { de: string;
     b.push({ id: "visitas_atrasadas", grupo: "operacional", titulo: "Visitas não iniciadas após o horário", quantidade: at, gravidade: grav(at, 1, 3), href: "/visitas?filtro=atrasadas" });
     b.push({ id: "visitas_andamento", grupo: "operacional", titulo: "Em atendimento agora", quantidade: ea, gravidade: "info", href: "/visitas?filtro=em_atendimento" });
     b.push({ id: "visitas_nc", grupo: "operacional", titulo: "Visitas parciais/não realizadas no período", quantidade: nc, gravidade: grav(nc, 1, 10), href: `/visitas?filtro=nao_concluidas&de=${periodo.de}&ate=${periodo.ate}` });
-    b.push({ id: "visitas_conflito", grupo: "operacional", titulo: "Agenda com equipe inválida (sem técnico ou técnico inativo)", quantidade: cf, gravidade: grav(cf, 1), href: "/visitas?filtro=conflitos", descricao: "Sobreposição de horários é bloqueada no servidor." });
+    b.push({ id: "visitas_conflito", grupo: "operacional", titulo: "Agenda com equipe inválida (sem técnico ou técnico inativo)", quantidade: cf, gravidade: grav(cf, 1), href: "/visitas?filtro=conflitos" });
   }
   if (pode(ctx, "pendencia.ver", "empresa")) {
     const sr = await contarPend(dbx, ctx, { semResponsavel: true });
