@@ -1,5 +1,5 @@
 /**
- * Esquema do banco — Thermobrás.
+ * Esquema do banco — Polar OS.
  * Convenções:
  *  - Toda tabela de negócio carrega empresa_id (fronteira de acesso).
  *  - Dinheiro: bigint em centavos (mode number). Nunca float.

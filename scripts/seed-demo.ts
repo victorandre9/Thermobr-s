@@ -5,7 +5,9 @@
  */
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
+
+const NOME_EMPRESA = "Climatização Modelo (demonstrativo)";
 import * as s from "../src/server/db/schema";
 import { modeloChecklist, responderChecklistVeiculo } from "../src/server/services/veiculos";
 import { garantirEstrutura, garantirChecklistVeiculoLeve, garantirCategorias } from "../src/server/services/estrutura";
@@ -34,9 +36,14 @@ type T = Parameters<Parameters<typeof db.transaction>[0]>[0];
 const tx = <R>(fn: (t: T) => Promise<R>) => db.transaction(fn);
 
 async function main() {
-  const [ja] = await db.select().from(s.empresa).where(eq(s.empresa.nome, "Thermobrás (DEMONSTRAÇÃO)"));
+  const [ja] = await db.select().from(s.empresa).where(inArray(s.empresa.nome, [NOME_EMPRESA, "Thermobrás (DEMONSTRAÇÃO)"]));
+  if (ja && ja.nome !== NOME_EMPRESA) { // marca antiga → empresa demonstrativa genérica (Polar OS)
+    await db.update(s.empresa).set({ nome: NOME_EMPRESA }).where(eq(s.empresa.id, ja.id));
+    await db.execute(sql`update usuario set email = replace(email, '@demo.thermobras.local', '@demo.polaros.local') where empresa_id = ${ja.id} and email like '%@demo.thermobras.local'`);
+    console.log("Empresa demonstrativa renomeada para", NOME_EMPRESA);
+  }
   if (ja) { console.log("Demonstração base já existe."); await popularMassa(db, ja.id); await despesasDemonstrativas(ja.id); if (await db.transaction((t) => garantirChecklistVeiculoLeve(t, ja.id))) console.log("Checklist de veículo leve atualizado."); await renomearDemonstrativo(); await pool.end(); return; }
-  const [emp] = await db.insert(s.empresa).values({ nome: "Thermobrás (DEMONSTRAÇÃO)", config: { financeiro: { politicaDelegacaoDefinida: false } } }).returning();
+  const [emp] = await db.insert(s.empresa).values({ nome: NOME_EMPRESA, config: { financeiro: { politicaDelegacaoDefinida: false } } }).returning();
   await tx((t) => garantirEstrutura(t, emp.id));
   const hash = await hashSenha(SENHA);
   const papelId = async (c: string) => (await db.select().from(s.papel).where(and(eq(s.papel.empresaId, emp.id), eq(s.papel.codigo, c))))[0].id;
@@ -51,15 +58,15 @@ async function main() {
     }
     return { u, pid, ctx: async () => (await carregarCtx(db, u.id)) as Ctx };
   }
-  const gestor = await user("Gestor Demo (sócio 1)", "gestor@demo.thermobras.local", ["gestor"]);
-  await user("Gestor Demo (sócio 2)", "socio@demo.thermobras.local", ["gestor"]);
-  const admin = await user("Administrativo Demo", "admin@demo.thermobras.local", ["administrativo"], { vinculo: "proprio", funcao: "administrativo" });
-  const fin = await user("Financeiro Demo", "financeiro@demo.thermobras.local", ["financeiro_operador"]);
-  const aut1 = await user("Técnico Autônomo A (demo)", "autonomo.a@demo.thermobras.local", ["tecnico"], { vinculo: "autonomo", competencias: ["split", "cassete", "limpeza"], regioes: ["centro"] });
-  const aut2 = await user("Técnico Autônomo B (demo)", "autonomo.b@demo.thermobras.local", ["tecnico"], { vinculo: "autonomo", competencias: ["split", "vrf"] });
-  const aut3 = await user("Técnico Autônomo C (demo)", "autonomo.c@demo.thermobras.local", ["tecnico"], { vinculo: "autonomo" });
-  const prop1 = await user("Técnico Próprio 1 (demo)", "proprio1@demo.thermobras.local", ["tecnico"], { vinculo: "proprio", competencias: ["split", "limpeza", "eletrica"], regioes: ["centro", "jardim américa"] });
-  const prop2 = await user("Técnico Próprio 2 (demo)", "proprio2@demo.thermobras.local", ["tecnico"], { vinculo: "proprio", competencias: ["split", "cassete"] });
+  const gestor = await user("Gestor Demo (sócio 1)", "gestor@demo.polaros.local", ["gestor"]);
+  await user("Gestor Demo (sócio 2)", "socio@demo.polaros.local", ["gestor"]);
+  const admin = await user("Administrativo Demo", "admin@demo.polaros.local", ["administrativo"], { vinculo: "proprio", funcao: "administrativo" });
+  const fin = await user("Financeiro Demo", "financeiro@demo.polaros.local", ["financeiro_operador"]);
+  const aut1 = await user("Técnico Autônomo A (demo)", "autonomo.a@demo.polaros.local", ["tecnico"], { vinculo: "autonomo", competencias: ["split", "cassete", "limpeza"], regioes: ["centro"] });
+  const aut2 = await user("Técnico Autônomo B (demo)", "autonomo.b@demo.polaros.local", ["tecnico"], { vinculo: "autonomo", competencias: ["split", "vrf"] });
+  const aut3 = await user("Técnico Autônomo C (demo)", "autonomo.c@demo.polaros.local", ["tecnico"], { vinculo: "autonomo" });
+  const prop1 = await user("Técnico Próprio 1 (demo)", "proprio1@demo.polaros.local", ["tecnico"], { vinculo: "proprio", competencias: ["split", "limpeza", "eletrica"], regioes: ["centro", "jardim américa"] });
+  const prop2 = await user("Técnico Próprio 2 (demo)", "proprio2@demo.polaros.local", ["tecnico"], { vinculo: "proprio", competencias: ["split", "cassete"] });
   const [ajud] = await db.insert(s.profissional).values({ empresaId: emp.id, nome: "Ajudante Próprio (demo, sem login)", vinculo: "proprio", funcao: "ajudante" }).returning();
   const G = await gestor.ctx(), A = await admin.ctx(), F = await fin.ctx();
 
@@ -173,7 +180,7 @@ async function main() {
   await tx(async (t) => criarObrigacao(t, G, { natureza: "pagar", categoriaId: await cat("uber_ferramenta"), beneficiarioNome: "Transporte por aplicativo", descricao: "Uber para levar escada esquecida (demo)", valorBrutoCentavos: 3800, origemTipo: "manual", parcelas: [{ vencimento: somarDias(hojeSP(), -10), valorCentavos: 3800 }] }));
 
   console.log("\nDemonstração criada (dados FICTÍCIOS). Senha de todas as contas demo:", SENHA);
-  for (const e of ["gestor", "socio", "admin", "financeiro", "autonomo.a", "autonomo.b", "autonomo.c", "proprio1", "proprio2"]) console.log(`  ${e}@demo.thermobras.local`);
+  for (const e of ["gestor", "socio", "admin", "financeiro", "autonomo.a", "autonomo.b", "autonomo.c", "proprio1", "proprio2"]) console.log(`  ${e}@demo.polaros.local`);
   void aut3; void prop2; void caixa;
   await popularMassa(db, emp.id);
   await despesasDemonstrativas(emp.id);

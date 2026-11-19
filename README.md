@@ -1,6 +1,6 @@
-# Thermobrás — gestão operacional e financeira
+# Polar OS — gestão de campo para climatização
 
-Aplicativo web (desktop e celular) para a operação da Thermobrás: pedidos → OS → agenda → atendimento em campo, ferramentas, veículos, materiais e financeiro operacional (cobranças, pagamentos, autônomos e previsão de caixa).
+Aplicativo web (desktop e celular) de gestão integrada para empresas de ar-condicionado com técnicos em campo: pedidos → OS → agenda → atendimento em campo, ferramentas, veículos, materiais e financeiro operacional (cobranças, pagamentos, autônomos e previsão de caixa).
 
 > Não faz emissão fiscal, cálculo de impostos, folha de pagamento, PIX/boletos ou integração bancária. Registrar um recebimento/pagamento aqui registra um **fato**; não movimenta dinheiro.
 

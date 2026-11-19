@@ -11,7 +11,7 @@ export interface Storage { salvar(chave: string, dados: Buffer, mime: string): P
 
 function localStorage(): Storage {
   // Na Vercel só /tmp é gravável (temporário — apenas demonstração; produção usa S3).
-  const base = path.resolve(process.env.STORAGE_LOCAL_DIR ?? (process.env.VERCEL ? "/tmp/thermobras-storage" : "./storage"));
+  const base = path.resolve(process.env.STORAGE_LOCAL_DIR ?? (process.env.VERCEL ? "/tmp/polar-os-storage" : "./storage"));
   const resolver = (chave: string) => {
     const p = path.resolve(base, chave);
     if (!p.startsWith(base + path.sep)) throw new Error("Chave inválida");

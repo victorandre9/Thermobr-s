@@ -53,7 +53,7 @@ export const MATERIAL_MOV_STATUS = { informado: "Informado (aguarda conferência
 export const OBRIGACAO_APROVACAO = { rascunho: "Rascunho", aguardando_aprovacao: "Aguardando aprovação", aprovada: "Aprovada", rejeitada: "Rejeitada", cancelada: "Cancelada" } as const;
 export const BAIXA_STATUS = { aguardando_conferencia: "Aguardando conferência", confirmada: "Confirmada", rejeitada: "Rejeitada" } as const;
 export const AUTONOMO_SITUACAO = { aguardando_valor: "Aguardando valor", aguardando_conferencia: "Aguardando conferência", conferido: "Conferido", liberado: "Liberado", pago: "Pago", cancelado: "Cancelado" } as const;
-export const VINCULOS = { autonomo: "Técnico autônomo", proprio: "Equipe própria (Thermobrás)" } as const;
+export const VINCULOS = { autonomo: "Técnico autônomo", proprio: "Equipe própria" } as const;
 export const UNIDADE_LABEL: Record<string, string> = { un: "un", m: "m", kg: "kg", l: "L", cx: "cx", rolo: "rolo", par: "par" };
 
 export function rotulo<T extends Record<string, string>>(mapa: T, k: string | null | undefined): string {

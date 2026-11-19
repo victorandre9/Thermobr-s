@@ -8,14 +8,14 @@ import { contasDemo } from "@/server/services/autenticacao";
 import { ASSINATURA } from "@/lib/marca";
 import { entrar, entrarDemo } from "../actions";
 
-export const metadata = { title: { absolute: "Thermobrás - Projeto de Gestão Integrada" } };
+export const metadata = { title: { absolute: "Polar OS — Gestão de campo para climatização" } };
 
 function perfil(papeis: string, vinculo: string | null) {
   if (papeis.includes("gestor")) return { nome: "Gestor geral / aprovador", desc: "Tudo: painel, aprovações, financeiro, configurações", icone: Crown, ordem: 1, cls: "" };
   if (papeis.includes("administrativo")) return { nome: "Administrativo e agenda", desc: "Pedidos, OS, agenda, ferramentas e materiais — sem financeiro", icone: ClipboardList, ordem: 2, cls: "" };
   if (papeis.includes("financeiro_operador")) return { nome: "Financeiro operacional", desc: "Contas, baixas para conferência, cobrança, autônomos", icone: Wallet, ordem: 3, cls: "ok" };
   if (vinculo === "autonomo") return { nome: "Técnico autônomo", desc: "Visitas, ferramentas, materiais e valores próprios — sem checklist de veículo", icone: Wrench, ordem: 4, cls: "warn" };
-  return { nome: "Técnico da Thermobrás", desc: "Visitas, ferramentas, materiais e checklist do veículo designado", icone: Truck, ordem: 5, cls: "navy" };
+  return { nome: "Técnico da equipe própria", desc: "Visitas, ferramentas, materiais e checklist do veículo designado", icone: Truck, ordem: 5, cls: "navy" };
 }
 
 export default async function Login() {

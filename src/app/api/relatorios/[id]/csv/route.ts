@@ -27,7 +27,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const { def, resultado } = await gerarRelatorio(db, ctx, id, { ...f, limite: 20000, offset: 0 });
     const linhas = [resultado.colunas.map((c) => celula(c.rotulo)).join(";"), ...resultado.linhas.map((l) => resultado.colunas.map((c) => celula(l[c.chave], c.tipo)).join(";"))];
     await auditar(db, ctx, { acao: "relatorio.exportado", entidadeTipo: "relatorio", entidadeId: id, depois: { filtros: f, linhas: resultado.linhas.length } });
-    return new Response("﻿" + linhas.join("\r\n"), { headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="thermobras-${def.id}-${new Date().toISOString().slice(0, 10)}.csv"`, "Cache-Control": "no-store" } });
+    return new Response("﻿" + linhas.join("\r\n"), { headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="polar-os-${def.id}-${new Date().toISOString().slice(0, 10)}.csv"`, "Cache-Control": "no-store" } });
   } catch (e) {
     return new Response((e as Error).message || "Acesso negado", { status: 403 });
   }

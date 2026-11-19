@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Thermobrás - Projeto de Gestão Integrada",
-    short_name: "Thermobrás",
+    name: "Polar OS — Gestão de campo para climatização",
+    short_name: "Polar OS",
     start_url: "/",
     display: "standalone",
     background_color: "#ffffff",

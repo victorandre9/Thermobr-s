@@ -1,9 +1,6 @@
 import "server-only";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { Document, Image, Page, StyleSheet, Text, View, renderToBuffer } from "@react-pdf/renderer";
 import type { ConteudoExterno } from "../services/relatorio-atendimento";
-import { LOGO_SRC } from "@/lib/marca";
 import { fmtDataHora } from "@/lib/datas";
 
 const s = StyleSheet.create({
@@ -25,14 +22,12 @@ const s = StyleSheet.create({
 const L = ({ k, v }: { k: string; v?: string | null }) => <View style={s.linha}><Text style={s.k}>{k}</Text><Text style={s.v}>{v || "—"}</Text></View>;
 
 export async function gerarPdfRelatorio(c: ConteudoExterno, meta: { versao: number; emitidoEm: Date; id: string; ciencia: { situacao: string; nome: string | null; em: Date | null; observacao: string | null } }, fotos: Array<{ nome: string; dados: Buffer; mime: string }>) {
-  let logo: Buffer | null = null;
-  if (LOGO_SRC) { try { logo = await readFile(path.join(process.cwd(), "public", LOGO_SRC)); } catch { logo = null; } }
   const ident = c.escopo === "visita" ? `Relatório de atendimento — VISITA ${c.visitaSequencia} da OS ${c.osNumero}` : `Relatório de atendimento — OS ${c.osNumero} (todas as visitas finalizadas)`;
   const doc = (
     <Document title={ident} author={c.empresa}>
       <Page size="A4" style={s.page}>
         <View style={s.head}>
-          <View>{logo ? <Image src={logo} style={{ width: 150 }} /> : <Text style={s.marca}>Thermobrás</Text>}</View>
+          <View><Text style={s.marca}>{c.empresa}</Text></View>
           <View><Text style={s.titulo}>{ident}</Text><Text style={[s.muted, { textAlign: "right" }]}>Versão {meta.versao} · emitido em {fmtDataHora(meta.emitidoEm)}</Text></View>
         </View>
         <View style={s.caixa}>
