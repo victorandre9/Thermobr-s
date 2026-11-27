@@ -14,7 +14,7 @@
    - o material não se liga à visita nem ao técnico (CP-05);
    - um item incluído depois na OS não entra na previsão de material (CP-07);
    - mudar a data sem clicar "Verificar" agenda no horário antigo (CP-03).
-6. **Cerca de 150 regras de negócio** estão listadas na seção 4. Toda reformulação precisa preservá-las, ou descartar alguma de forma consciente.
+6. **159 regras de negócio** estão listadas na seção 4. Toda reformulação precisa preservá-las, ou descartar alguma de forma consciente.
 
 ---
 
